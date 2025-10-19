@@ -5,10 +5,9 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const activeBumps = {};
 
-const MESSAGE_1 = "hi";
-const MESSAGE_2 = "hi";
+const MESSAGE = "hi";
 const BASE_URL = 'https://discord.com/api/v9';
-const BUMP_INTERVAL = 1800 * 1000; // 30 minutes in milliseconds
+const BUMP_INTERVAL = (2 * 60 * 60 + 60) * 1000; // 2 hours and 1 minute in milliseconds
 
 async function sendMessage(token, channelId, content) {
     try {
@@ -36,11 +35,8 @@ function startBumping(channelId, token) {
         clearInterval(activeBumps[channelId].interval);
     }
 
-    let msgToggle = false;
     const interval = setInterval(() => {
-        const content = msgToggle ? MESSAGE_1 : MESSAGE_2;
-        sendMessage(token, channelId, content);
-        msgToggle = !msgToggle;
+        sendMessage(token, channelId, MESSAGE);
     }, BUMP_INTERVAL);
 
     activeBumps[channelId] = { interval, token };
