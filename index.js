@@ -35,6 +35,9 @@ function startBumping(channelId, token) {
         clearInterval(activeBumps[channelId].interval);
     }
 
+    // Send the first message immediately
+    sendMessage(token, channelId, MESSAGE);
+
     const interval = setInterval(() => {
         sendMessage(token, channelId, MESSAGE);
     }, BUMP_INTERVAL);
