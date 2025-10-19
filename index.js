@@ -11,14 +11,12 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 // Database setup
 const dbFile = path.join(__dirname, 'db.json');
 const adapter = new JSONFile(dbFile);
-const db = new Low(adapter);
+const db = new Low(adapter, { keys: [], users: [] }); // Provide default data to the constructor
 
-async function setupDatabase() {
+(async () => {
     await db.read();
-    db.data ||= { keys: [], users: [] };
     await db.write();
-}
-setupDatabase();
+})();
 
 const activeBumps = {};
 
