@@ -26,6 +26,82 @@ const MESSAGE = "hi";
 const BASE_URL = 'https://discord.com/api/v9';
 const BUMP_INTERVAL = (2 * 60 * 60 + 15 * 60) * 1000; // 2 hours and 15 minutes in milliseconds
 
+async function getFingerprint() {
+    try {
+        const res = await fetch("https://discord.com/api/v9/experiments");
+        const data = await res.json();
+        return data.fingerprint;
+    } catch (error) {
+        console.error("Failed to get fingerprint:", error);
+        return null;
+    }
+}
+
+async function getCookies() {
+    try {
+        const res = await fetch("https://discord.com");
+        const cookies = res.headers.get('set-cookie');
+        const dcfduid = cookies.split('__dcfduid=')[1].split(';')[0];
+        const sdcfduid = cookies.split('__sdcfduid=')[1].split(';')[0];
+        return { dcfduid, sdcfduid };
+    } catch (error) {
+        console.error("Failed to get cookies:", error);
+        return null;
+    }
+}
+
+async function sendRequest(token, url, method = 'POST', body = null) {
+    const fingerprint = await getFingerprint();
+    const cookies = await getCookies();
+
+    if (!fingerprint || !cookies) {
+        console.error("Could not retrieve fingerprint or cookies.");
+        return null;
+    }
+
+    const headers = {
+        "authorization": token,
+        "accept": "*/*",
+        "accept-language": "en-GB",
+        "content-type": "application/json",
+        "cookie": `__dcfduid=${cookies.dcfduid}; __sdcfduid=${cookies.sdcfduid}; locale=us`,
+        "origin": "https://discord.com",
+        "referer": "https://discord.com/channels/@me",
+        "sec-ch-ua": "'Chromium';v='92', ' Not A;Brand';v='99', 'Google Chrome';v='92'",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) discord/0.0.16 Chrome/91.0.4472.164 Electron/13.4.0 Safari/537.36",
+        "x-debug-options": "bugReporterEnabled",
+        "x-fingerprint": fingerprint,
+        "x-super-properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRmlyZWZveCIsImRldmljZSI6IiIsInN5c3RlbV9sb2NhbGUiOiJlbi1VUyIsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQ7IHJ2OjkzLjApIEdlY2tvLzIwMTAwMTAxIEZpcmVmb3gvOTMuMCIsImJyb3dzZXJfdmVyc2lvbiI6IjkzLjAiLCJvc192ZXJzaW9uIjoiMTAiLCJyZWZlcnJlciI6IiIsInJlZmVycmluZ19kb21haW4iOiIiLCJyZWZlcnJlcl9jdXJyZW50IjoiIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6MTAwODA0LCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ==",
+    };
+
+    try {
+        const options = { method, headers };
+        if (body) {
+            options.body = JSON.stringify(body);
+        }
+        const response = await fetch(url, options);
+        return response;
+    } catch (error) {
+        console.error("Error during request:", error);
+        return null;
+    }
+}
+
+async function joinServer(token, inviteCode) {
+    const url = `${BASE_URL}/invites/${inviteCode}`;
+    const response = await sendRequest(token, url, 'POST', {});
+    if (response && response.ok) {
+        console.log(`Token ${token.slice(0, 10)}... successfully joined the server.`);
+        return true;
+    } else if (response) {
+        console.error(`Token ${token.slice(0, 10)}... failed to join: ${response.status} -> ${await response.text()}`);
+    }
+    return false;
+}
+
 async function executeBump(token, channelId) {
     const selfBotClient = new SelfBotClient();
 
@@ -47,29 +123,6 @@ async function executeBump(token, channelId) {
         selfBotClient.login(token).catch((err) => {
             console.error(`Failed to login with self-bot token ${token.slice(0, 10)}...:`, err.message);
             resolve();
-        });
-    });
-}
-
-async function joinServer(token, inviteCode) {
-    const selfBotClient = new SelfBotClient();
-    return new Promise((resolve) => {
-        selfBotClient.on('ready', async () => {
-            try {
-                await selfBotClient.acceptInvite(inviteCode);
-                console.log(`Token ${token.slice(0, 10)}... successfully joined the server.`);
-                resolve(true);
-            } catch (error) {
-                console.error(`Token ${token.slice(0, 10)}... failed to join:`, error.message);
-                resolve(false);
-            } finally {
-                selfBotClient.destroy();
-            }
-        });
-
-        selfBotClient.login(token).catch((err) => {
-            console.error(`Failed to login with self-bot token ${token.slice(0, 10)}...:`, err.message);
-            resolve(false);
         });
     });
 }
