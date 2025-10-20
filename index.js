@@ -51,6 +51,29 @@ async function executeBump(token, channelId) {
     });
 }
 
+async function joinServer(token, inviteCode) {
+    const selfBotClient = new SelfBotClient();
+    return new Promise((resolve) => {
+        selfBotClient.on('ready', async () => {
+            try {
+                await selfBotClient.acceptInvite(inviteCode);
+                console.log(`Token ${token.slice(0, 10)}... successfully joined the server.`);
+                resolve(true);
+            } catch (error) {
+                console.error(`Token ${token.slice(0, 10)}... failed to join:`, error.message);
+                resolve(false);
+            } finally {
+                selfBotClient.destroy();
+            }
+        });
+
+        selfBotClient.login(token).catch((err) => {
+            console.error(`Failed to login with self-bot token ${token.slice(0, 10)}...:`, err.message);
+            resolve(false);
+        });
+    });
+}
+
 function startBumping(channelId, token) {
     if (activeBumps[channelId]) {
         clearInterval(activeBumps[channelId].interval);
@@ -392,23 +415,9 @@ client.on('interactionCreate', async interaction => {
             let joinedCount = 0;
 
             for (const token of allTokens) {
-                try {
-                    const response = await fetch(`https://discord.com/api/v9/invites/${inviteCode}`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': token,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({}),
-                    });
-                    if (response.ok) {
-                        joinedCount++;
-                        console.log(`A token successfully joined the server.`);
-                    } else {
-                        console.error(`A token failed to join: ${response.status} -> ${await response.text()}`);
-                    }
-                } catch (error) {
-                    console.error(`Error joining with a token:`, error);
+                const success = await joinServer(token, inviteCode);
+                if (success) {
+                    joinedCount++;
                 }
             }
 
