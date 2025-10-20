@@ -1,4 +1,4 @@
 node_modules
 .env
 db.json
-tokens.json
+tokens.txt

