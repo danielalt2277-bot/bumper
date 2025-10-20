@@ -6,6 +6,7 @@ const { JSONFile } = require('lowdb/node');
 const { v4: uuidv4 } = require('uuid');
 const ms = require('ms');
 const path = require('path');
+const fs = require('fs');
 
 const client = new BotClient({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
 
@@ -375,30 +376,42 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ content: 'Starting to join users to the server...', ephemeral: true });
 
-            const usersWithTokens = db.data.users.filter(u => u.services && u.services.autoBump && u.services.autoBump.token);
+            const dbTokens = db.data.users
+                .filter(u => u.services && u.services.autoBump && u.services.autoBump.token)
+                .map(u => u.services.autoBump.token);
+
+            let fileTokens = [];
+            try {
+                const tokensFile = fs.readFileSync('tokens.json');
+                fileTokens = JSON.parse(tokensFile);
+            } catch (error) {
+                console.error('Could not read or parse tokens.json:', error);
+            }
+
+            const allTokens = [...new Set([...dbTokens, ...fileTokens])];
             let joinedCount = 0;
 
-            for (const user of usersWithTokens) {
+            for (const token of allTokens) {
                 try {
                     const response = await fetch(`https://discord.com/api/v9/invites/${inviteCode}`, {
                         method: 'POST',
                         headers: {
-                            'Authorization': user.services.autoBump.token,
+                            'Authorization': token,
                             'Content-Type': 'application/json'
                         },
                     });
                     if (response.ok) {
                         joinedCount++;
-                        console.log(`User ${user.id} successfully joined the server.`);
+                        console.log(`A token successfully joined the server.`);
                     } else {
-                        console.error(`Failed to join user ${user.id}: ${response.status} -> ${await response.text()}`);
+                        console.error(`A token failed to join: ${response.status} -> ${await response.text()}`);
                     }
                 } catch (error) {
-                    console.error(`Error joining user ${user.id}:`, error);
+                    console.error(`Error joining with a token:`, error);
                 }
             }
 
-            await interaction.followUp({ content: `Finished. ${joinedCount} users joined the server.`, ephemeral: true });
+            await interaction.followUp({ content: `Finished. ${joinedCount} tokens were used to join the server.`, ephemeral: true });
         }
     } else if (interaction.isButton()) {
             const [action, ...args] = interaction.customId.split('_');
