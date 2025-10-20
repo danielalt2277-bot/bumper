@@ -21,60 +21,16 @@ const db = new Low(adapter, { keys: [], users: [] }); // Provide default data to
 })();
 
 const activeBumps = {};
+const activeVouches = {};
 
 const MESSAGE = "hi";
 const BASE_URL = 'https://discord.com/api/v9';
 const BUMP_INTERVAL = (2 * 60 * 60 + 15 * 60) * 1000; // 2 hours and 15 minutes in milliseconds
 
-async function getFingerprint() {
-    try {
-        const res = await fetch("https://discord.com/api/v9/experiments");
-        const data = await res.json();
-        return data.fingerprint;
-    } catch (error) {
-        console.error("Failed to get fingerprint:", error);
-        return null;
-    }
-}
-
-async function getCookies() {
-    try {
-        const res = await fetch("https://discord.com");
-        const cookies = res.headers.get('set-cookie');
-        const dcfduid = cookies.split('__dcfduid=')[1].split(';')[0];
-        const sdcfduid = cookies.split('__sdcfduid=')[1].split(';')[0];
-        return { dcfduid, sdcfduid };
-    } catch (error) {
-        console.error("Failed to get cookies:", error);
-        return null;
-    }
-}
-
 async function sendRequest(token, url, method = 'POST', body = null) {
-    const fingerprint = await getFingerprint();
-    const cookies = await getCookies();
-
-    if (!fingerprint || !cookies) {
-        console.error("Could not retrieve fingerprint or cookies.");
-        return null;
-    }
-
     const headers = {
         "authorization": token,
-        "accept": "*/*",
-        "accept-language": "en-GB",
         "content-type": "application/json",
-        "cookie": `__dcfduid=${cookies.dcfduid}; __sdcfduid=${cookies.sdcfduid}; locale=us`,
-        "origin": "https://discord.com",
-        "referer": "https://discord.com/channels/@me",
-        "sec-ch-ua": "'Chromium';v='92', ' Not A;Brand';v='99', 'Google Chrome';v='92'",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) discord/0.0.16 Chrome/91.0.4472.164 Electron/13.4.0 Safari/537.36",
-        "x-debug-options": "bugReporterEnabled",
-        "x-fingerprint": fingerprint,
-        "x-super-properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRmlyZWZveCIsImRldmljZSI6IiIsInN5c3RlbV9sb2NhbGUiOiJlbi1VUyIsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQ7IHJ2OjkzLjApIEdlY2tvLzIwMTAwMTAxIEZpcmVmb3gvOTMuMCIsImJyb3dzZXJfdmVyc2lvbiI6IjkzLjAiLCJvc192ZXJzaW9uIjoiMTAiLCJyZWZlcnJlciI6IiIsInJlZmVycmluZ19kb21haW4iOiIiLCJyZWZlcnJlcl9jdXJyZW50IjoiIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6MTAwODA0LCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ==",
     };
 
     try {
@@ -134,6 +90,63 @@ function stopBumping(channelId) {
     if (activeBumps[channelId]) {
         clearInterval(activeBumps[channelId].interval);
         delete activeBumps[channelId];
+    }
+}
+
+function startVouching(userId, channelId, targetUserId) {
+    if (activeVouches[userId]) {
+        clearTimeout(activeVouches[userId].timeout);
+    }
+
+    const run = async () => {
+        const user = db.data.users.find(u => u.id === userId);
+        if (!user || !user.services.autoVouch || !user.services.autoVouch.isActive) {
+            return;
+        }
+
+        let vouches, userVouches, tokens;
+        try {
+            vouches = fs.readFileSync('vouches.txt', 'utf-8').split('\n').map(v => v.trim()).filter(Boolean);
+            userVouches = vouches.filter(v => v.includes(`<@${targetUserId}>`));
+            tokens = JSON.parse(fs.readFileSync('tokens.json', 'utf-8'));
+        } catch (error) {
+            console.error("Error reading vouches.txt or tokens.json:", error);
+            return;
+        }
+
+        if (userVouches.length === 0 || tokens.length === 0) {
+            console.error("No vouches found for the user or no tokens available.");
+            return;
+        }
+
+        let vouch = userVouches[Math.floor(Math.random() * userVouches.length)];
+        while (vouch === user.services.autoVouch.lastVouch) {
+            vouch = userVouches[Math.floor(Math.random() * userVouches.length)];
+        }
+        user.services.autoVouch.lastVouch = vouch;
+
+        let token = tokens[Math.floor(Math.random() * tokens.length)];
+        while (token === user.services.autoVouch.lastToken) {
+            token = tokens[Math.floor(Math.random() * tokens.length)];
+        }
+        user.services.autoVouch.lastToken = token;
+
+        await db.write();
+
+        const url = `${BASE_URL}/channels/${channelId}/messages`;
+        await sendRequest(token, url, 'POST', { content: vouch });
+
+        const delay = Math.floor(Math.random() * (7 * 60 * 1000 - 2 * 60 * 1000 + 1)) + 2 * 60 * 1000;
+        activeVouches[userId] = { timeout: setTimeout(run, delay) };
+    };
+
+    run();
+}
+
+function stopVouching(userId) {
+    if (activeVouches[userId]) {
+        clearTimeout(activeVouches[userId].timeout);
+        delete activeVouches[userId];
     }
 }
 
@@ -197,13 +210,25 @@ const commands = [
         description: 'Manage your active services.',
     },
     {
-        name: 'join',
-        description: 'Makes all auto-bump users join a server.',
+        name: 'autovouch',
+        description: 'Starts the auto-vouching process for a specific user.',
         options: [
             {
-                name: 'invite_link',
+                name: 'key',
                 type: 3, // STRING
-                description: 'The invite link to the server.',
+                description: 'Your license key.',
+                required: true,
+            },
+            {
+                name: 'channel_id',
+                type: 3, // STRING
+                description: 'The ID of the channel to send vouches to.',
+                required: true,
+            },
+            {
+                name: 'user_id',
+                type: 3, // STRING
+                description: 'The ID of the user whose vouches you want to send.',
                 required: true,
             },
         ],
@@ -228,6 +253,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 client.on('clientReady', () => {
     console.log(`Logged in as ${client.user.tag}!`);
     restartActiveBumps();
+    restartActiveVouches();
 });
 
 function restartActiveBumps() {
@@ -236,6 +262,14 @@ function restartActiveBumps() {
         startBumping(user.services.autoBump.channelId, user.services.autoBump.token);
     }
     console.log(`Restarted ${activeUsers.length} active bumps.`);
+}
+
+function restartActiveVouches() {
+    const activeUsers = db.data.users.filter(u => u.services && u.services.autoVouch && u.services.autoVouch.isActive);
+    for (const user of activeUsers) {
+        startVouching(user.id, user.services.autoVouch.channelId, user.services.autoVouch.userId);
+    }
+    console.log(`Restarted ${activeUsers.length} active vouches.`);
 }
 
 client.on('interactionCreate', async interaction => {
@@ -401,72 +435,92 @@ client.on('interactionCreate', async interaction => {
         } else if (commandName === 'manage') {
             const user = db.data.users.find(u => u.id === interaction.user.id);
 
-            if (!user || !user.services || !user.services.autoBump) {
-                return interaction.reply({ content: 'You have not activated any services yet. Use `/auto-bump` with a valid key first.', ephemeral: true });
+            if (!user || !user.services) {
+                return interaction.reply({ content: 'You have not activated any services yet.', ephemeral: true });
             }
 
             const autoBumpService = user.services.autoBump;
+            const autoVouchService = user.services.autoVouch;
 
             const embed = new EmbedBuilder()
                 .setTitle('Service Management')
-                .setDescription('Manage your active services below.')
-                .addFields({
+                .setDescription('Manage your active services below.');
+
+            const rows = [];
+
+            if (autoBumpService) {
+                embed.addFields({
                     name: 'Auto-Bump Service',
                     value: `Status: **${autoBumpService.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${autoBumpService.channelId}>`,
-                })
-                .setColor(autoBumpService.isActive ? '#00FF00' : '#FF0000');
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('manage_autobump_start')
-                    .setLabel('Start')
-                    .setStyle(ButtonStyle.Success)
-                    .setDisabled(autoBumpService.isActive),
-                new ButtonBuilder()
-                    .setCustomId('manage_autobump_stop')
-                    .setLabel('Stop')
-                    .setStyle(ButtonStyle.Danger)
-                    .setDisabled(!autoBumpService.isActive)
-            );
-
-            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-        } else if (commandName === 'join') {
-            if (interaction.user.id !== '1159088261973692446') {
-                return interaction.reply({ content: 'You are not authorized to use this command.', ephemeral: true });
+                });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_autobump_start').setLabel('Start Bump').setStyle(ButtonStyle.Success).setDisabled(autoBumpService.isActive),
+                    new ButtonBuilder().setCustomId('manage_autobump_stop').setLabel('Stop Bump').setStyle(ButtonStyle.Danger).setDisabled(!autoBumpService.isActive)
+                ));
             }
 
-            const inviteLink = interaction.options.getString('invite_link');
-            const inviteCode = inviteLink.split('/').pop();
-
-            await interaction.reply({ content: 'Starting to join users to the server...', ephemeral: true });
-
-            const dbTokens = db.data.users
-                .filter(u => u.services && u.services.autoBump && u.services.autoBump.token)
-                .map(u => u.services.autoBump.token);
-
-            let fileTokens = [];
-            try {
-                const tokensFile = fs.readFileSync('tokens.txt', 'utf-8');
-                fileTokens = tokensFile.split('\n').map(t => t.trim()).filter(Boolean);
-            } catch (error) {
-                console.error('Could not read or parse tokens.txt:', error);
+            if (autoVouchService) {
+                embed.addFields({
+                    name: 'Auto-Vouch Service',
+                    value: `Status: **${autoVouchService.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${autoVouchService.channelId}>\nUser: <@${autoVouchService.userId}>`,
+                });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_autovouch_start').setLabel('Start Vouch').setStyle(ButtonStyle.Success).setDisabled(autoVouchService.isActive),
+                    new ButtonBuilder().setCustomId('manage_autovouch_stop').setLabel('Stop Vouch').setStyle(ButtonStyle.Danger).setDisabled(!autoVouchService.isActive)
+                ));
             }
 
-            const allTokens = [...new Set([...dbTokens, ...fileTokens])];
-            let joinedCount = 0;
+            await interaction.reply({ embeds: [embed], components: rows, ephemeral: true });
+        } else if (commandName === 'autovouch') {
+            const key = interaction.options.getString('key');
+            const channelId = interaction.options.getString('channel_id');
+            const userId = interaction.options.getString('user_id');
 
-            for (const token of allTokens) {
-                const url = `${BASE_URL}/invites/${inviteCode}`;
-                const response = await sendRequest(token, url, 'POST', {});
-                if (response && response.ok) {
-                    joinedCount++;
-                    console.log(`A token successfully joined the server.`);
-                } else if (response) {
-                    console.error(`A token failed to join: ${response.status} -> ${await response.text()}`);
-                }
+            const keyData = db.data.keys.find(k => k.key === key);
+
+            if (!keyData) {
+                return interaction.reply({ content: 'Invalid key.', ephemeral: true });
+            }
+            if (keyData.isUsed) {
+                return interaction.reply({ content: 'This key has already been used.', ephemeral: true });
+            }
+            if (keyData.expiresAt && new Date(keyData.expiresAt) < new Date()) {
+                return interaction.reply({ content: 'This key has expired.', ephemeral: true });
             }
 
-            await interaction.followUp({ content: `Finished. ${joinedCount} tokens were used to join the server.`, ephemeral: true });
+            keyData.isUsed = true;
+            keyData.usedBy = interaction.user.id;
+            keyData.usedAt = new Date();
+
+            let user = db.data.users.find(u => u.id === interaction.user.id);
+            if (user) {
+                user.services = user.services || {};
+                user.services.autoVouch = {
+                    channelId,
+                    userId,
+                    isActive: true,
+                    lastVouch: null,
+                    lastToken: null,
+                };
+            } else {
+                db.data.users.push({
+                    id: interaction.user.id,
+                    services: {
+                        autoVouch: {
+                            channelId,
+                            userId,
+                            isActive: true,
+                            lastVouch: null,
+                            lastToken: null,
+                        },
+                    },
+                });
+            }
+            await db.write();
+
+            startVouching(interaction.user.id, channelId, userId);
+            await interaction.reply({ content: `Auto-vouching has started for user ${userId} in channel ${channelId}.`, ephemeral: true });
+        }
         }
     } else if (interaction.isButton()) {
             const [action, ...args] = interaction.customId.split('_');
@@ -501,6 +555,41 @@ client.on('interactionCreate', async interaction => {
             );
 
             await interaction.update({ embeds: [embed], components: [row] });
+            } else if (action === 'manage' && args[0] === 'autovouch') {
+                const operation = args[1];
+                const user = db.data.users.find(u => u.id === interaction.user.id);
+                const autoVouchService = user.services.autoVouch;
+
+                if (operation === 'start') {
+                    autoVouchService.isActive = true;
+                    startVouching(user.id, autoVouchService.channelId, autoVouchService.userId);
+                } else if (operation === 'stop') {
+                    autoVouchService.isActive = false;
+                    stopVouching(user.id);
+                }
+                await db.write();
+
+                // Re-generate the full management embed
+                const autoBumpService = user.services.autoBump;
+                const embed = new EmbedBuilder()
+                    .setTitle('Service Management')
+                    .setDescription('Manage your active services below.');
+                const rows = [];
+                if (autoBumpService) {
+                    embed.addFields({ name: 'Auto-Bump Service', value: `Status: **${autoBumpService.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${autoBumpService.channelId}>` });
+                    rows.push(new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('manage_autobump_start').setLabel('Start Bump').setStyle(ButtonStyle.Success).setDisabled(autoBumpService.isActive),
+                        new ButtonBuilder().setCustomId('manage_autobump_stop').setLabel('Stop Bump').setStyle(ButtonStyle.Danger).setDisabled(!autoBumpService.isActive)
+                    ));
+                }
+                if (autoVouchService) {
+                    embed.addFields({ name: 'Auto-Vouch Service', value: `Status: **${autoVouchService.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${autoVouchService.channelId}>\nUser: <@${autoVouchService.userId}>` });
+                    rows.push(new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('manage_autovouch_start').setLabel('Start Vouch').setStyle(ButtonStyle.Success).setDisabled(autoVouchService.isActive),
+                        new ButtonBuilder().setCustomId('manage_autovouch_stop').setLabel('Stop Vouch').setStyle(ButtonStyle.Danger).setDisabled(!autoVouchService.isActive)
+                    ));
+                }
+                await interaction.update({ embeds: [embed], components: rows });
             } else if (action === 'delete' && args[0] === 'key') {
                 const keyToDelete = args[1];
                 db.data.keys = db.data.keys.filter(k => k.key !== keyToDelete);

@@ -1,5 +1,5 @@
 node_modules
 .env
 db.json
-tokens.txt
-tokens.txt
+tokens.json
+vouches.txt
