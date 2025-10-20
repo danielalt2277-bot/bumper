@@ -1,12 +1,13 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client: BotClient, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client: SelfBotClient } = require('discord.js-selfbot-v13');
 const { Low } = require('lowdb');
 const { JSONFile } = require('lowdb/node');
 const { v4: uuidv4 } = require('uuid');
 const ms = require('ms');
 const path = require('path');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
+const client = new BotClient({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
 
 // Database setup
 const dbFile = path.join(__dirname, 'db.json');
@@ -22,27 +23,31 @@ const activeBumps = {};
 
 const MESSAGE = "hi";
 const BASE_URL = 'https://discord.com/api/v9';
-const BUMP_INTERVAL = (2 * 60 * 60 + 60) * 1000; // 2 hours and 1 minute in milliseconds
+const BUMP_INTERVAL = (2 * 60 * 60 + 15 * 60) * 1000; // 2 hours and 15 minutes in milliseconds
 
-async function sendMessage(token, channelId, content) {
-    try {
-        const response = await fetch(`${BASE_URL}/channels/${channelId}/messages`, {
-            method: 'POST',
-            headers: {
-                'Authorization': token,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ content }),
+async function executeBump(token, channelId) {
+    const selfBotClient = new SelfBotClient();
+
+    return new Promise((resolve) => {
+        selfBotClient.on('ready', async () => {
+            console.log(`Self-bot logged in as ${selfBotClient.user.tag} for bumping.`);
+            try {
+                const channel = await selfBotClient.channels.fetch(channelId);
+                await channel.sendSlash('302050872383242240', 'bump');
+                console.log(`Bump command sent successfully in channel ${channelId} by ${selfBotClient.user.tag}.`);
+            } catch (error) {
+                console.error(`Failed to send bump command for token ${token.slice(0, 10)}...:`, error.message);
+            } finally {
+                selfBotClient.destroy();
+                resolve();
+            }
         });
 
-        if (response.ok) {
-            console.log(`[${new Date().toLocaleTimeString()}] Sent to ${channelId}`);
-        } else {
-            console.error(`[ERROR] ${response.status} → ${await response.text()}`);
-        }
-    } catch (error) {
-        console.error(`[ERROR] Failed to send message: ${error.message}`);
-    }
+        selfBotClient.login(token).catch((err) => {
+            console.error(`Failed to login with self-bot token ${token.slice(0, 10)}...:`, err.message);
+            resolve();
+        });
+    });
 }
 
 function startBumping(channelId, token) {
@@ -50,11 +55,11 @@ function startBumping(channelId, token) {
         clearInterval(activeBumps[channelId].interval);
     }
 
-    // Send the first message immediately
-    sendMessage(token, channelId, MESSAGE);
+    // Execute the first bump immediately
+    executeBump(token, channelId);
 
     const interval = setInterval(() => {
-        sendMessage(token, channelId, MESSAGE);
+        executeBump(token, channelId);
     }, BUMP_INTERVAL);
 
     activeBumps[channelId] = { interval, token };
