@@ -183,27 +183,32 @@ function startVouching(userId, channelId, targetUserId) {
         try {
             const vouches = fs.readFileSync('vouches.txt', 'utf-8').split('\n').map(v => v.trim()).filter(Boolean);
             const tokens = JSON.parse(fs.readFileSync('tokens.json', 'utf-8'));
-            const userVouches = vouches.filter(v => v.includes(`<@${targetUserId}>`));
+            const userVouches = vouches; // No pre-filtering
 
             if (!userVouches.length || !tokens.length) {
-                console.error("[AutoVouch] No vouches found for the target user or no tokens available. Stopping service.");
+                console.error("[AutoVouch] No vouches found in vouches.txt or no tokens available. Stopping service.");
                 return;
             }
 
-            let vouch = userVouches[Math.floor(Math.random() * userVouches.length)];
-            if (userVouches.length > 1) {
-                while (vouch === user.services.autoVouch.lastVouch) vouch = userVouches[Math.floor(Math.random() * userVouches.length)];
-            }
-            user.services.autoVouch.lastVouch = vouch;
+            user.services.autoVouch.lastVouches = user.services.autoVouch.lastVouches || [];
+            let vouch;
+            do {
+                vouch = userVouches[Math.floor(Math.random() * userVouches.length)];
+            } while (user.services.autoVouch.lastVouches.includes(vouch) && userVouches.length > 3);
+            user.services.autoVouch.lastVouches.push(vouch);
+            if (user.services.autoVouch.lastVouches.length > 3) user.services.autoVouch.lastVouches.shift();
 
-            let token = tokens[Math.floor(Math.random() * tokens.length)];
-            if (tokens.length > 1) {
-                 while (token === user.services.autoVouch.lastToken) token = tokens[Math.floor(Math.random() * tokens.length)];
-            }
-            user.services.autoVouch.lastToken = token;
+            user.services.autoVouch.lastTokens = user.services.autoVouch.lastTokens || [];
+            let token;
+            do {
+                token = tokens[Math.floor(Math.random() * tokens.length)];
+            } while (user.services.autoVouch.lastTokens.includes(token) && tokens.length > 3);
+            user.services.autoVouch.lastTokens.push(token);
+            if (user.services.autoVouch.lastTokens.length > 3) user.services.autoVouch.lastTokens.shift();
             await db.write();
 
-            addToMessageQueue(token, channelId, { content: vouch }, 'AutoVouch');
+            const finalVouch = vouch.replace(/<@useid>/g, `<@${targetUserId}>`);
+            addToMessageQueue(token, channelId, { content: finalVouch }, 'AutoVouch');
 
             const delay = Math.floor(Math.random() * (600000 - 180000 + 1)) + 180000; // 3-10 mins
             console.log(`[AutoVouch] Next vouch for user ${userId} in ${(delay / 60000).toFixed(2)} minutes.`);
@@ -240,17 +245,21 @@ function startTrading(userId, channelId) {
                 return;
             }
 
-            let message = messages[Math.floor(Math.random() * messages.length)];
-            if (messages.length > 1) {
-                while (message === user.services.autotrade.lastMessage) message = messages[Math.floor(Math.random() * messages.length)];
-            }
-            user.services.autotrade.lastMessage = message;
+            user.services.autotrade.lastMessages = user.services.autotrade.lastMessages || [];
+            let message;
+            do {
+                message = messages[Math.floor(Math.random() * messages.length)];
+            } while (user.services.autotrade.lastMessages.includes(message) && messages.length > 3);
+            user.services.autotrade.lastMessages.push(message);
+            if (user.services.autotrade.lastMessages.length > 3) user.services.autotrade.lastMessages.shift();
 
-            let token = tokens[Math.floor(Math.random() * tokens.length)];
-            if (tokens.length > 1) {
-                 while (token === user.services.autotrade.lastToken) token = tokens[Math.floor(Math.random() * tokens.length)];
-            }
-            user.services.autotrade.lastToken = token;
+            user.services.autotrade.lastTokens = user.services.autotrade.lastTokens || [];
+            let token;
+            do {
+                token = tokens[Math.floor(Math.random() * tokens.length)];
+            } while (user.services.autotrade.lastTokens.includes(token) && tokens.length > 3);
+            user.services.autotrade.lastTokens.push(token);
+            if (user.services.autotrade.lastTokens.length > 3) user.services.autotrade.lastTokens.shift();
             await db.write();
 
             addToMessageQueue(token, channelId, { content: message }, 'AutoTrade');
@@ -422,18 +431,30 @@ client.on('interactionCreate', async interaction => {
             const rows = [];
             if (user.services.autoBump) {
                 const s = user.services.autoBump;
-                embed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
-                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_bump_start').setLabel('Start Bump').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_bump_stop').setLabel('Stop Bump').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+                embed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_bump_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
+                    new ButtonBuilder().setCustomId('manage_bump_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
+                    new ButtonBuilder().setCustomId('edit_bump').setLabel('Edit').setStyle(ButtonStyle.Primary)
+                ));
             }
             if (user.services.autoVouch) {
                 const s = user.services.autoVouch;
-                embed.addFields({ name: 'Auto-Vouch', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
-                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_vouch_start').setLabel('Start Vouch').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_vouch_stop').setLabel('Stop Vouch').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+                embed.addFields({ name: 'Auto-Vouch', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>\nUser: <@${s.userId}>` });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_vouch_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
+                    new ButtonBuilder().setCustomId('manage_vouch_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
+                    new ButtonBuilder().setCustomId('edit_vouch').setLabel('Edit').setStyle(ButtonStyle.Primary)
+                ));
             }
             if (user.services.autotrade) {
                 const s = user.services.autotrade;
-                embed.addFields({ name: 'Auto-Trade', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
-                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_trade_start').setLabel('Start Trade').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_trade_stop').setLabel('Stop Trade').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+                embed.addFields({ name: 'Auto-Trade', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_trade_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
+                    new ButtonBuilder().setCustomId('manage_trade_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
+                    new ButtonBuilder().setCustomId('edit_trade').setLabel('Edit').setStyle(ButtonStyle.Primary)
+                ));
             }
             await interaction.reply({ embeds: [embed], components: rows, ephemeral: true });
         } else if (commandName === 'tokencheck') {
@@ -509,10 +530,39 @@ client.on('interactionCreate', async interaction => {
             }
             if (user.services.autotrade) {
                 const s = user.services.autotrade;
-                manageEmbed.addFields({ name: 'Auto-Trade', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
-                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_trade_start').setLabel('Start Trade').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_trade_stop').setLabel('Stop Trade').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+                manageEmbed.addFields({ name: 'Auto-Trade', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_trade_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
+                    new ButtonBuilder().setCustomId('manage_trade_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
+                    new ButtonBuilder().setCustomId('edit_trade').setLabel('Edit').setStyle(ButtonStyle.Primary)
+                ));
             }
             await interaction.update({ embeds: [manageEmbed], components: rows });
+        } else if (action === 'edit') {
+            const service = args[0]; // 'bump', 'vouch', or 'trade'
+            const user = findUser();
+            const serviceData = user.services[service === 'bump' ? 'autoBump' : service === 'vouch' ? 'autoVouch' : 'autotrade'];
+
+            const modal = new ModalBuilder()
+                .setCustomId(`edit_modal_${service}`)
+                .setTitle(`Edit ${service.charAt(0).toUpperCase() + service.slice(1)} Service`);
+
+            if (service === 'bump') {
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('channel_id').setLabel('Channel ID').setStyle(TextInputStyle.Short).setValue(serviceData.channelId).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('token').setLabel('Token').setStyle(TextInputStyle.Short).setValue(serviceData.token).setRequired(true))
+                );
+            } else if (service === 'vouch') {
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('channel_id').setLabel('Channel ID').setStyle(TextInputStyle.Short).setValue(serviceData.channelId).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('user_id').setLabel('Target User ID').setStyle(TextInputStyle.Short).setValue(serviceData.userId).setRequired(true))
+                );
+            } else if (service === 'trade') {
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('channel_id').setLabel('Channel ID').setStyle(TextInputStyle.Short).setValue(serviceData.channelId).setRequired(true))
+                );
+            }
+            await interaction.showModal(modal);
         } else if (action === 'delete' && args[0] === 'key') {
             db.data.keys = db.data.keys.filter(k => k.key !== args[1]);
             await db.write();
@@ -545,6 +595,38 @@ client.on('interactionCreate', async interaction => {
             keyData.expiresAt = duration === Infinity ? null : new Date(Date.now() + duration);
             await db.write();
             await interaction.reply({ content: `Key expiration updated.`, ephemeral: true });
+        } else if (action === 'edit' && args[0] === 'modal') {
+            const service = args[1]; // 'bump', 'vouch', or 'trade'
+            const user = findUser();
+            const serviceName = service === 'bump' ? 'autoBump' : service === 'vouch' ? 'autoVouch' : 'autotrade';
+            const serviceData = user.services[serviceName];
+
+            const channelId = interaction.fields.getTextInputValue('channel_id');
+            serviceData.channelId = channelId;
+
+            if (service === 'bump') {
+                const token = interaction.fields.getTextInputValue('token');
+                serviceData.token = token;
+                if (serviceData.isActive) {
+                    stopBumping(userId);
+                    startBumping(userId, channelId, token);
+                }
+            } else if (service === 'vouch') {
+                const targetUserId = interaction.fields.getTextInputValue('user_id');
+                serviceData.userId = targetUserId;
+                if (serviceData.isActive) {
+                    stopVouching(userId);
+                    startVouching(userId, channelId, targetUserId);
+                }
+            } else if (service === 'trade') {
+                if (serviceData.isActive) {
+                    stopTrading(userId);
+                    startTrading(userId, channelId);
+                }
+            }
+
+            await db.write();
+            await interaction.reply({ content: `Successfully updated the ${service} service.`, ephemeral: true });
         }
     }
 });
