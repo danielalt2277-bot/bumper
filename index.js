@@ -22,6 +22,7 @@ const db = new Low(adapter, { keys: [], users: [] });
 
 const activeBumps = {};
 const activeVouches = {};
+const activeTrades = {};
 const BASE_URL = 'https://discord.com/api/v9';
 
 // --- SAFEGUARDS AND HELPERS ---
@@ -190,12 +191,99 @@ function stopVouching(userId) {
     }
 }
 
+// --- TRADE FUNCTIONS ---
+
+async function sendTradeRequest(token, channelId, body) {
+    try {
+        const url = `${BASE_URL}/channels/${channelId}/messages`;
+        const response = await safeFetch(url, {
+            method: 'POST',
+            headers: { "authorization": token, "content-type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        if (!response.ok) {
+            console.error(`[AutoTrade] Discord API Error: ${response.status}`);
+        } else {
+            console.log(`[AutoTrade] Successfully sent trade message to channel ${channelId}.`);
+        }
+    } catch (error) {
+        console.error("[AutoTrade] Error sending trade request:", error);
+    }
+}
+
+function startTrading(userId, channelId) {
+    if (activeTrades[userId]) clearTimeout(activeTrades[userId].timeout);
+
+    const run = async () => {
+        const user = db.data.users.find(u => u.id === userId);
+        if (!user?.services?.autotrade?.isActive) return;
+
+        try {
+            const messages = fs.readFileSync('tradingmessages.txt', 'utf-8').split('\n').map(v => v.trim()).filter(Boolean);
+            const tokens = JSON.parse(fs.readFileSync('tokens.json', 'utf-8'));
+
+            if (!messages.length || !tokens.length) {
+                console.error("[AutoTrade] No messages found in tradingmessages.txt or no tokens available. Stopping service.");
+                return;
+            }
+
+            let message = messages[Math.floor(Math.random() * messages.length)];
+            if (messages.length > 1) {
+                while (message === user.services.autotrade.lastMessage) message = messages[Math.floor(Math.random() * messages.length)];
+            }
+            user.services.autotrade.lastMessage = message;
+
+            let token = tokens[Math.floor(Math.random() * tokens.length)];
+            if (tokens.length > 1) {
+                 while (token === user.services.autotrade.lastToken) token = tokens[Math.floor(Math.random() * tokens.length)];
+            }
+            user.services.autotrade.lastToken = token;
+            await db.write();
+
+            await sendTradeRequest(token, channelId, { content: message });
+
+            const delay = Math.floor(Math.random() * (480000 - 180000 + 1)) + 180000; // 3-8 mins
+            console.log(`[AutoTrade] Next trade message for user ${userId} in ${(delay / 60000).toFixed(2)} minutes.`);
+            activeTrades[userId] = { timeout: setTimeout(run, delay) };
+        } catch (error) {
+            console.error("[AutoTrade] A critical error occurred in the trading loop:", error);
+        }
+    };
+    run();
+}
+
+function stopTrading(userId) {
+    if (activeTrades[userId]) {
+        clearTimeout(activeTrades[userId].timeout);
+        delete activeTrades[userId];
+    }
+}
+
 // --- COMMANDS AND INTERACTIONS ---
 
 const commands = [
     { name: 'auto-bump', description: 'Starts the auto-bumping process.', options: [{ name: 'key', type: 3, description: 'Your license key.', required: true }, { name: 'channel_id', type: 3, description: 'The channel ID for bumping.', required: true }, { name: 'token', type: 3, description: 'Your authorization token.', required: true }] },
     { name: 'autovouch', description: 'Starts the auto-vouching process.', options: [{ name: 'key', type: 3, description: 'Your license key.', required: true }, { name: 'channel_id', type: 3, description: 'The channel ID for vouching.', required: true }, { name: 'user_id', type: 3, description: 'The user ID to vouch for.', required: true }] },
-    { name: 'key-gen', description: 'Generates a new key.', options: [{ name: 'user', type: 6, description: 'The user to generate the key for.', required: true }, { name: 'duration', type: 3, description: 'Duration (e.g., 7d, 1m, 0 for perm).', required: true }] },
+    { name: 'autotrade', description: 'Starts the auto-trading process.', options: [{ name: 'key', type: 3, description: 'Your license key.', required: true }, { name: 'channel_id', type: 3, description: 'The channel ID for trading messages.', required: true }] },
+    {
+        name: 'key-gen',
+        description: 'Generates a new key for a specific service.',
+        options: [
+            { name: 'user', type: 6, description: 'The user to generate the key for.', required: true },
+            { name: 'duration', type: 3, description: 'Duration (e.g., 7d, 1m, 0 for perm).', required: true },
+            {
+                name: 'service',
+                type: 3,
+                description: 'The service this key will unlock.',
+                required: true,
+                choices: [
+                    { name: 'Auto-Bump', value: 'autobump' },
+                    { name: 'Auto-Vouch', value: 'autovouch' },
+                    { name: 'Auto-Trade', value: 'autotrade' }
+                ]
+            }
+        ]
+    },
     { name: 'check-keys', description: 'Checks the status of keys.', options: [{ name: 'user', type: 6, description: 'The user to search for.', required: false }] },
     { name: 'manage', description: 'Manage your active services.' },
     { name: 'tokencheck', description: 'Checks and manages all stored tokens.', options: [{ name: 'action', type: 3, description: 'Optional action for invalid tokens.', required: false, choices: [{ name: 'Remove Invalid Tokens', value: 'remove' }] }] }
@@ -214,6 +302,7 @@ client.on('clientReady', () => {
     db.data.users.forEach(user => {
         if (user.services?.autoBump?.isActive) startBumping(user.id, user.services.autoBump.channelId, user.services.autoBump.token);
         if (user.services?.autoVouch?.isActive) startVouching(user.id, user.services.autoVouch.channelId, user.services.autoVouch.userId);
+        if (user.services?.autotrade?.isActive) startTrading(user.id, user.services.autotrade.channelId);
     });
     console.log(`Restarted active services.`);
 });
@@ -229,11 +318,13 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isCommand()) {
         const { commandName } = interaction;
-        if (['auto-bump', 'autovouch'].includes(commandName)) {
+        if (['auto-bump', 'autovouch', 'autotrade'].includes(commandName)) {
             const key = interaction.options.getString('key');
             const keyData = db.data.keys.find(k => k.key === key);
-            if (!keyData || keyData.isUsed || (keyData.expiresAt && new Date(keyData.expiresAt) < new Date())) {
-                return interaction.reply({ content: 'This key is invalid, already used, or expired.', ephemeral: true });
+            const serviceName = commandName.replace('-', '');
+
+            if (!keyData || keyData.isUsed || (keyData.expiresAt && new Date(keyData.expiresAt) < new Date()) || keyData.service !== serviceName) {
+                return interaction.reply({ content: `This key is invalid, already used, expired, or not for the \`${serviceName}\` service.`, ephemeral: true });
             }
             keyData.isUsed = true;
             keyData.usedBy = userId;
@@ -252,16 +343,44 @@ client.on('interactionCreate', async interaction => {
             await db.write();
             startVouching(userId, user.services.autoVouch.channelId, user.services.autoVouch.userId);
             await interaction.reply({ content: `Auto-vouching has started.`, ephemeral: true });
+        } else if (commandName === 'autotrade') {
+            const user = findUser() || createUser();
+            user.services.autotrade = { channelId: interaction.options.getString('channel_id'), isActive: true, lastMessage: null, lastToken: null };
+            await db.write();
+            startTrading(userId, user.services.autotrade.channelId);
+            await interaction.reply({ content: `Auto-trading has started.`, ephemeral: true });
         } else if (commandName === 'key-gen') {
             if (userId !== '1159088261973692446') return interaction.reply({ content: 'Unauthorized.', ephemeral: true });
+
+            const targetUser = interaction.options.getUser('user');
             const durationStr = interaction.options.getString('duration');
+            const service = interaction.options.getString('service');
             const duration = durationStr === '0' ? Infinity : ms(durationStr);
-            if (isNaN(duration)) return interaction.reply({ content: 'Invalid duration.', ephemeral: true });
+
+            if (isNaN(duration)) return interaction.reply({ content: 'Invalid duration format.', ephemeral: true });
+
             const expiresAt = duration === Infinity ? null : new Date(Date.now() + duration);
             const newKey = uuidv4();
-            db.data.keys.push({ key: newKey, generatedBy: userId, generatedAt: new Date(), expiresAt, isUsed: false, usedBy: null, usedAt: null });
+
+            db.data.keys.push({ key: newKey, service: service, generatedBy: userId, generatedAt: new Date(), expiresAt, isUsed: false, usedBy: null, usedAt: null });
             await db.write();
-            await interaction.reply({ content: `Generated key: \`${newKey}\``, ephemeral: true });
+
+            const embed = new EmbedBuilder()
+                .setTitle('Your New License Key')
+                .setColor('#00FF00')
+                .addFields(
+                    { name: 'Service', value: `\`${service}\`` },
+                    { name: 'Key', value: `\`${newKey}\`` },
+                    { name: 'Expires', value: expiresAt ? `<t:${Math.floor(expiresAt.getTime() / 1000)}:R>` : 'Never' }
+                );
+
+            try {
+                await targetUser.send({ embeds: [embed] });
+                await interaction.reply({ content: `Successfully generated and sent a ${service} key to ${targetUser.tag}.`, ephemeral: true });
+            } catch (error) {
+                console.error(`Could not send DM to ${targetUser.tag}.`);
+                await interaction.reply({ content: `Could not DM ${targetUser.tag}. The key is: \`${newKey}\``, ephemeral: true });
+            }
         } else if (commandName === 'check-keys') {
             if (userId !== '1159088261973692446') return interaction.reply({ content: 'Unauthorized.', ephemeral: true });
             const targetUser = interaction.options.getUser('user');
@@ -297,6 +416,11 @@ client.on('interactionCreate', async interaction => {
                 const s = user.services.autoVouch;
                 embed.addFields({ name: 'Auto-Vouch', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
                 rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_vouch_start').setLabel('Start Vouch').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_vouch_stop').setLabel('Stop Vouch').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+            }
+            if (user.services.autotrade) {
+                const s = user.services.autotrade;
+                embed.addFields({ name: 'Auto-Trade', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
+                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_trade_start').setLabel('Start Trade').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_trade_stop').setLabel('Stop Trade').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
             }
             await interaction.reply({ embeds: [embed], components: rows, ephemeral: true });
         } else if (commandName === 'tokencheck') {
@@ -337,16 +461,24 @@ client.on('interactionCreate', async interaction => {
         if (action === 'manage') {
             const user = findUser();
             if (!user) return;
-            const serviceName = args[0] === 'bump' ? 'autoBump' : 'autoVouch';
+
+            let serviceName;
+            if (args[0] === 'bump') serviceName = 'autoBump';
+            else if (args[0] === 'vouch') serviceName = 'autoVouch';
+            else if (args[0] === 'trade') serviceName = 'autotrade';
+
             const operation = args[1];
             const s = user.services[serviceName];
             s.isActive = operation === 'start';
+
             if (s.isActive) {
                 if (serviceName === 'autoBump') startBumping(userId, s.channelId, s.token);
-                else startVouching(userId, s.channelId, s.userId);
+                else if (serviceName === 'autoVouch') startVouching(userId, s.channelId, s.userId);
+                else if (serviceName === 'autotrade') startTrading(userId, s.channelId);
             } else {
                 if (serviceName === 'autoBump') stopBumping(userId);
-                else stopVouching(userId);
+                else if (serviceName === 'autoVouch') stopVouching(userId);
+                else if (serviceName === 'autotrade') stopTrading(userId);
             }
             await db.write();
 
@@ -361,6 +493,11 @@ client.on('interactionCreate', async interaction => {
                 const s = user.services.autoVouch;
                 manageEmbed.addFields({ name: 'Auto-Vouch', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
                 rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_vouch_start').setLabel('Start Vouch').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_vouch_stop').setLabel('Stop Vouch').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+            }
+            if (user.services.autotrade) {
+                const s = user.services.autotrade;
+                manageEmbed.addFields({ name: 'Auto-Trade', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
+                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_trade_start').setLabel('Start Trade').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_trade_stop').setLabel('Stop Trade').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
             }
             await interaction.update({ embeds: [manageEmbed], components: rows });
         } else if (action === 'delete' && args[0] === 'key') {
