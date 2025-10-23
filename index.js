@@ -380,7 +380,7 @@ client.on('interactionCreate', async interaction => {
             const serviceName = commandName.replace('-', '');
 
             if (!keyData || keyData.isUsed || (keyData.expiresAt && new Date(keyData.expiresAt) < new Date()) || keyData.service !== serviceName) {
-                return interaction.reply({ content: `This key is invalid, already used, expired, or not for the \`${serviceName}\` service.`, ephemeral: true });
+                return interaction.reply({ content: `This key is invalid, already used, expired, or not for the \`${serviceName}\` service.`, flags: 64 });
             }
             keyData.isUsed = true;
             keyData.usedBy = userId;
@@ -392,28 +392,28 @@ client.on('interactionCreate', async interaction => {
             user.services.autoBump = { channelId: interaction.options.getString('channel_id'), token: interaction.options.getString('token'), isActive: true };
             await db.write();
             startBumping(userId, user.services.autoBump.channelId, user.services.autoBump.token);
-            await interaction.reply({ content: `Auto-bumping has started.`, ephemeral: true });
+            await interaction.reply({ content: `Auto-bumping has started.`, flags: 64 });
         } else if (commandName === 'autovouch') {
             const user = findUser() || createUser();
             user.services.autoVouch = { channelId: interaction.options.getString('channel_id'), userId: interaction.options.getString('user_id'), isActive: true, lastVouch: null, lastToken: null };
             await db.write();
             startVouching(userId, user.services.autoVouch.channelId, user.services.autoVouch.userId);
-            await interaction.reply({ content: `Auto-vouching has started.`, ephemeral: true });
+            await interaction.reply({ content: `Auto-vouching has started.`, flags: 64 });
         } else if (commandName === 'autotrade') {
             const user = findUser() || createUser();
             user.services.autotrade = { channelId: interaction.options.getString('channel_id'), isActive: true, lastMessage: null, lastToken: null };
             await db.write();
             startTrading(userId, user.services.autotrade.channelId);
-            await interaction.reply({ content: `Auto-trading has started.`, ephemeral: true });
+            await interaction.reply({ content: `Auto-trading has started.`, flags: 64 });
         } else if (commandName === 'key-gen') {
-            if (userId !== '1159088261973692446') return interaction.reply({ content: 'Unauthorized.', ephemeral: true });
+            if (userId !== '1159088261973692446') return interaction.reply({ content: 'Unauthorized.', flags: 64 });
 
             const targetUser = interaction.options.getUser('user');
             const durationStr = interaction.options.getString('duration');
             const service = interaction.options.getString('service');
             const duration = durationStr === '0' ? Infinity : ms(durationStr);
 
-            if (isNaN(duration)) return interaction.reply({ content: 'Invalid duration format.', ephemeral: true });
+            if (isNaN(duration)) return interaction.reply({ content: 'Invalid duration format.', flags: 64 });
 
             const expiresAt = duration === Infinity ? null : new Date(Date.now() + duration);
             const newKey = uuidv4();
@@ -432,20 +432,20 @@ client.on('interactionCreate', async interaction => {
 
             try {
                 await targetUser.send({ embeds: [embed] });
-                await interaction.reply({ content: `Successfully generated and sent a ${service} key to ${targetUser.tag}.`, ephemeral: true });
+                await interaction.reply({ content: `Successfully generated and sent a ${service} key to ${targetUser.tag}.`, flags: 64 });
             } catch (error) {
                 console.error(`Could not send DM to ${targetUser.tag}.`);
-                await interaction.reply({ content: `Could not DM ${targetUser.tag}. The key is: \`${newKey}\``, ephemeral: true });
+                await interaction.reply({ content: `Could not DM ${targetUser.tag}. The key is: \`${newKey}\``, flags: 64 });
             }
         } else if (commandName === 'check-keys') {
-            if (userId !== '1159088261973692446') return interaction.reply({ content: 'Unauthorized.', ephemeral: true });
+            if (userId !== '1159088261973692446') return interaction.reply({ content: 'Unauthorized.', flags: 64 });
             const targetUser = interaction.options.getUser('user');
             if (targetUser) {
                 const userKey = db.data.keys.find(k => k.usedBy === targetUser.id);
-                if (!userKey) return interaction.reply({ content: `${targetUser.tag} has no key.`, ephemeral: true });
+                if (!userKey) return interaction.reply({ content: `${targetUser.tag} has no key.`, flags: 64 });
                 const embed = new EmbedBuilder().setTitle(`Key Info for ${targetUser.username}`).addFields({ name: 'Key', value: `\`${userKey.key}\`` }, { name: 'Status', value: userKey.isUsed ? 'Used' : 'Not Used' }, { name: 'Expires', value: userKey.expiresAt ? `<t:${Math.floor(new Date(userKey.expiresAt).getTime() / 1000)}:R>` : 'Never' });
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`delete_key_${userKey.key}`).setLabel('Delete').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(`edit_key_${userKey.key}`).setLabel('Edit Expiry').setStyle(ButtonStyle.Primary));
-                await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+                await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
             } else {
                 const page = 0;
                 const keysPerPage = 5;
@@ -456,16 +456,16 @@ client.on('interactionCreate', async interaction => {
                     return new EmbedBuilder().setTitle('All Generated Keys').setDescription(keysOnPage.map(k => `**Key:** \`${k.key}\`\n**Used by:** ${k.usedBy ? `<@${k.usedBy}>` : 'N/A'}\n**Expires:** ${k.expiresAt ? `<t:${Math.floor(new Date(k.expiresAt).getTime() / 1000)}:R>` : 'Never'}`).join('\n\n') || 'No keys.').setFooter({ text: `Page ${currentPage + 1} of ${totalPages}` });
                 };
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ck_prev').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0), new ButtonBuilder().setCustomId('ck_next').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page >= totalPages - 1));
-                await interaction.reply({ embeds: [generateEmbed(page)], components: [row], ephemeral: true });
+                await interaction.reply({ embeds: [generateEmbed(page)], components: [row], flags: 64 });
             }
         } else if (commandName === 'manage') {
             const user = findUser();
-            if (!user || !Object.keys(user.services).length) return interaction.reply({ content: 'You have no services.', ephemeral: true });
+            if (!user || !Object.keys(user.services).length) return interaction.reply({ content: 'You have no services.', flags: 64 });
             const embed = new EmbedBuilder().setTitle('Service Management');
             const rows = [];
             if (user.services.autoBump) {
                 const s = user.services.autoBump;
-                embed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
+                manageEmbed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
                 rows.push(new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('manage_bump_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
                     new ButtonBuilder().setCustomId('manage_bump_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
@@ -554,7 +554,7 @@ client.on('interactionCreate', async interaction => {
             const rows = [];
             if (user.services.autoBump) {
                 const s = user.services.autoBump;
-                embed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
+                manageEmbed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
                 rows.push(new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('manage_bump_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
                     new ButtonBuilder().setCustomId('manage_bump_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
