@@ -23,6 +23,8 @@ const db = new Low(adapter, { keys: [], users: [] });
 const activeBumps = {};
 const activeVouches = {};
 const activeTrades = {};
+const messageQueue = [];
+let isProcessingQueue = false;
 const BASE_URL = 'https://discord.com/api/v9';
 
 // --- SAFEGUARDS AND HELPERS ---
@@ -71,7 +73,7 @@ async function checkToken(token) {
 
 // --- BUMP FUNCTIONS ---
 
-async function executeBump(token, channelId) {
+async function executeBump(userId, token, channelId) {
     if (!token) return;
     const selfBotClient = new SelfBotClient(selfBotOptions);
 
@@ -91,9 +93,16 @@ async function executeBump(token, channelId) {
         }
     });
 
-    selfBotClient.login(token).catch(err => {
+    selfBotClient.login(token).catch(async (err) => {
         if (err.message.includes('Incorrect login details')) {
-            console.error(`[AutoBump] A token was invalid. It will be removed on the next /tokencheck.`);
+            console.error(`[AutoBump] Token for user ${userId} is invalid. Disabling service.`);
+            const user = db.data.users.find(u => u.id === userId);
+            if (user) {
+                user.services.autoBump.isActive = false;
+                user.services.autoBump.token = null; // Clear the invalid token
+                await db.write();
+                stopBumping(userId);
+            }
         } else {
             console.error(`[AutoBump] Self-bot login failed:`, err.message);
         }
@@ -107,7 +116,7 @@ function startBumping(userId, channelId, token) {
         const user = db.data.users.find(u => u.id === userId);
         if (!user?.services?.autoBump?.isActive) return;
 
-        executeBump(token, channelId);
+        executeBump(userId, token, channelId);
         const nextInterval = getBumpInterval();
         console.log(`[AutoBump] Next bump for user ${userId} in ${(nextInterval / (1000 * 60)).toFixed(2)} minutes.`);
         activeBumps[userId] = { timeout: setTimeout(run, nextInterval) };
@@ -124,21 +133,43 @@ function stopBumping(userId) {
 
 // --- VOUCH FUNCTIONS ---
 
-async function sendVouchRequest(token, channelId, body) {
+async function processMessageQueue() {
+    if (isProcessingQueue || messageQueue.length === 0) return;
+    isProcessingQueue = true;
+
+    const { token, channelId, body, serviceName } = messageQueue.shift();
+
     try {
+        // Typing indicator
+        await safeFetch(`${BASE_URL}/channels/${channelId}/typing`, { method: 'POST', headers: { "authorization": token } });
+        await sleep(Math.floor(Math.random() * 2000) + 1000); // 1-3s typing
+
         const url = `${BASE_URL}/channels/${channelId}/messages`;
         const response = await safeFetch(url, {
             method: 'POST',
             headers: { "authorization": token, "content-type": "application/json" },
             body: JSON.stringify(body)
         });
+
         if (!response.ok) {
-            console.error(`[AutoVouch] Discord API Error: ${response.status}`);
+            console.error(`[${serviceName}] Discord API Error: ${response.status}`);
         } else {
-            console.log(`[AutoVouch] Successfully sent vouch message to channel ${channelId}.`);
+            console.log(`[${serviceName}] Successfully sent message to channel ${channelId}.`);
         }
     } catch (error) {
-        console.error("[AutoVouch] Error sending vouch request:", error);
+        console.error(`[${serviceName}] Error sending message:`, error);
+    } finally {
+        const delay = Math.floor(Math.random() * 4000) + 2000; // 2-6s delay
+        await sleep(delay);
+        isProcessingQueue = false;
+        processMessageQueue();
+    }
+}
+
+function addToMessageQueue(token, channelId, body, serviceName) {
+    messageQueue.push({ token, channelId, body, serviceName });
+    if (!isProcessingQueue) {
+        processMessageQueue();
     }
 }
 
@@ -172,9 +203,9 @@ function startVouching(userId, channelId, targetUserId) {
             user.services.autoVouch.lastToken = token;
             await db.write();
 
-            await sendVouchRequest(token, channelId, { content: vouch });
+            addToMessageQueue(token, channelId, { content: vouch }, 'AutoVouch');
 
-            const delay = Math.floor(Math.random() * (480000 - 180000 + 1)) + 180000; // 3-8 mins
+            const delay = Math.floor(Math.random() * (600000 - 180000 + 1)) + 180000; // 3-10 mins
             console.log(`[AutoVouch] Next vouch for user ${userId} in ${(delay / 60000).toFixed(2)} minutes.`);
             activeVouches[userId] = { timeout: setTimeout(run, delay) };
         } catch (error) {
@@ -192,24 +223,6 @@ function stopVouching(userId) {
 }
 
 // --- TRADE FUNCTIONS ---
-
-async function sendTradeRequest(token, channelId, body) {
-    try {
-        const url = `${BASE_URL}/channels/${channelId}/messages`;
-        const response = await safeFetch(url, {
-            method: 'POST',
-            headers: { "authorization": token, "content-type": "application/json" },
-            body: JSON.stringify(body)
-        });
-        if (!response.ok) {
-            console.error(`[AutoTrade] Discord API Error: ${response.status}`);
-        } else {
-            console.log(`[AutoTrade] Successfully sent trade message to channel ${channelId}.`);
-        }
-    } catch (error) {
-        console.error("[AutoTrade] Error sending trade request:", error);
-    }
-}
 
 function startTrading(userId, channelId) {
     if (activeTrades[userId]) clearTimeout(activeTrades[userId].timeout);
@@ -240,9 +253,9 @@ function startTrading(userId, channelId) {
             user.services.autotrade.lastToken = token;
             await db.write();
 
-            await sendTradeRequest(token, channelId, { content: message });
+            addToMessageQueue(token, channelId, { content: message }, 'AutoTrade');
 
-            const delay = Math.floor(Math.random() * (480000 - 180000 + 1)) + 180000; // 3-8 mins
+            const delay = Math.floor(Math.random() * (600000 - 180000 + 1)) + 180000; // 3-10 mins
             console.log(`[AutoTrade] Next trade message for user ${userId} in ${(delay / 60000).toFixed(2)} minutes.`);
             activeTrades[userId] = { timeout: setTimeout(run, delay) };
         } catch (error) {
