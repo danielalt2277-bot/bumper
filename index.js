@@ -25,6 +25,7 @@ const activeVouches = {};
 const activeTrades = {};
 const messageQueue = [];
 let isProcessingQueue = false;
+const clientPool = new Map();
 const BASE_URL = 'https://discord.com/api/v9';
 
 // --- SAFEGUARDS AND HELPERS ---
@@ -137,25 +138,21 @@ async function processMessageQueue() {
     if (isProcessingQueue || messageQueue.length === 0) return;
     isProcessingQueue = true;
 
-    const { token, channelId, body, serviceName } = messageQueue.shift();
+    const { client: selfBot, channelId, body, serviceName } = messageQueue.shift();
 
     try {
-        // Typing indicator
-        await safeFetch(`${BASE_URL}/channels/${channelId}/typing`, { method: 'POST', headers: { "authorization": token } });
+        const channel = await selfBot.channels.fetch(channelId);
+        if (!channel) {
+            console.error(`[${serviceName}] Could not find channel ${channelId}.`);
+            return;
+        }
+
+        await channel.sendTyping();
         await sleep(Math.floor(Math.random() * 2000) + 1000); // 1-3s typing
 
-        const url = `${BASE_URL}/channels/${channelId}/messages`;
-        const response = await safeFetch(url, {
-            method: 'POST',
-            headers: { "authorization": token, "content-type": "application/json" },
-            body: JSON.stringify(body)
-        });
+        await channel.send(body.content);
+        console.log(`[${serviceName}] Successfully sent message to channel ${channelId} by ${selfBot.user.tag}.`);
 
-        if (!response.ok) {
-            console.error(`[${serviceName}] Discord API Error: ${response.status}`);
-        } else {
-            console.log(`[${serviceName}] Successfully sent message to channel ${channelId}.`);
-        }
     } catch (error) {
         console.error(`[${serviceName}] Error sending message:`, error);
     } finally {
@@ -167,7 +164,12 @@ async function processMessageQueue() {
 }
 
 function addToMessageQueue(token, channelId, body, serviceName) {
-    messageQueue.push({ token, channelId, body, serviceName });
+    const client = clientPool.get(token);
+    if (!client) {
+        console.error(`[${serviceName}] Could not find a logged-in client for the selected token.`);
+        return;
+    }
+    messageQueue.push({ client, channelId, body, serviceName });
     if (!isProcessingQueue) {
         processMessageQueue();
     }
@@ -281,6 +283,37 @@ function stopTrading(userId) {
     }
 }
 
+// --- CLIENT POOL FUNCTIONS ---
+
+async function initializeClientPool() {
+    console.log('[Client Pool] Initializing...');
+    let tokens = [];
+    try {
+        tokens = JSON.parse(fs.readFileSync('tokens.json', 'utf-8'));
+    } catch (error) {
+        console.error('[Client Pool] Could not read or parse tokens.json:', error.message);
+        return;
+    }
+
+    for (const token of tokens) {
+        const client = new SelfBotClient(selfBotOptions);
+        try {
+            await new Promise((resolve, reject) => {
+                client.on('ready', () => {
+                    console.log(`[Client Pool] Logged in as ${client.user.tag}.`);
+                    clientPool.set(token, client);
+                    resolve();
+                });
+                client.login(token).catch(reject);
+            });
+        } catch (error) {
+            console.error(`[Client Pool] Failed to login token ending in ...${token.slice(-5)}:`, error.message);
+        }
+    }
+    console.log(`[Client Pool] Initialization complete. ${clientPool.size}/${tokens.length} clients logged in.`);
+}
+
+
 // --- COMMANDS AND INTERACTIONS ---
 
 const commands = [
@@ -319,8 +352,9 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     } catch (error) { console.error(error); }
 })();
 
-client.on('clientReady', () => {
+client.on('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
+    await initializeClientPool();
     db.data.users.forEach(user => {
         if (user.services?.autoBump?.isActive) startBumping(user.id, user.services.autoBump.channelId, user.services.autoBump.token);
         if (user.services?.autoVouch?.isActive) startVouching(user.id, user.services.autoVouch.channelId, user.services.autoVouch.userId);
@@ -520,8 +554,12 @@ client.on('interactionCreate', async interaction => {
             const rows = [];
             if (user.services.autoBump) {
                 const s = user.services.autoBump;
-                manageEmbed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**` });
-                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('manage_bump_start').setLabel('Start Bump').setStyle(ButtonStyle.Success).setDisabled(s.isActive), new ButtonBuilder().setCustomId('manage_bump_stop').setLabel('Stop Bump').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive)));
+                embed.addFields({ name: 'Auto-Bump', value: `Status: **${s.isActive ? 'Active' : 'Inactive'}**\nChannel: <#${s.channelId}>` });
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('manage_bump_start').setLabel('Start').setStyle(ButtonStyle.Success).setDisabled(s.isActive),
+                    new ButtonBuilder().setCustomId('manage_bump_stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setDisabled(!s.isActive),
+                    new ButtonBuilder().setCustomId('edit_bump').setLabel('Edit').setStyle(ButtonStyle.Primary)
+                ));
             }
             if (user.services.autoVouch) {
                 const s = user.services.autoVouch;
