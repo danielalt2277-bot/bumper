@@ -87,11 +87,20 @@ def load_config():
     with open('config.json', 'r') as f:
         return json.load(f)
 
-def load_proxies():
+def fetch_proxies_from_api(url="https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text"):
+    """Fetches a list of proxies from the specified API."""
     try:
-        with open('proxies.txt', 'r') as f:
-            return [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
+        logging.info("Fetching proxies from API...")
+        r = requests.get(url)
+        if r.status_code == 200:
+            proxies = [line.strip() for line in r.text.split('\n') if line.strip()]
+            logging.info(f"Successfully fetched {len(proxies)} proxies.")
+            return proxies
+        else:
+            logging.error(f"Failed to fetch proxies. Status code: {r.status_code}")
+            return []
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching proxies: {e}")
         return []
 
 def channel_worker(client, channel_id, interval, messages):
@@ -108,7 +117,7 @@ def channel_worker(client, channel_id, interval, messages):
 
 if __name__ == "__main__":
     config = load_config()
-    proxies = load_proxies()
+    proxies = fetch_proxies_from_api()
 
     clients = []
     for i, token in enumerate(config['tokens']):
