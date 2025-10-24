@@ -117,19 +117,49 @@ def channel_worker(client, channel_id, interval, messages):
 
 if __name__ == "__main__":
     config = load_config()
-    proxies = fetch_proxies_from_api()
-
     clients = []
-    for i, token in enumerate(config['tokens']):
-        proxy = proxies[i % len(proxies)] if proxies else None
-        try:
-            clients.append(DiscordClient(token, proxy))
-        except ValueError as e:
-            logging.error(e)
+
+    use_proxies = config.get("use_proxies", False)
+    proxies = []
+    if use_proxies:
+        proxies = fetch_proxies_from_api()
+        random.shuffle(proxies)
+
+    proxy_iter = iter(proxies)
+
+    for token in config['tokens']:
+        client_initialized = False
+        if use_proxies:
+            while not client_initialized:
+                try:
+                    proxy = next(proxy_iter)
+                    logging.info(f"Attempting to initialize token ...{token[-4:]} with proxy {proxy}")
+                    client = DiscordClient(token, proxy)
+                    clients.append(client)
+                    client_initialized = True
+                except StopIteration:
+                    logging.error("Ran out of proxies. Some tokens may not be initialized.")
+                    break
+                except ValueError as e:
+                    logging.warning(f"Proxy {proxy} failed for token ...{token[-4:]}. Error: {e}. Trying next proxy.")
+        else:
+            try:
+                logging.info(f"Attempting to initialize token ...{token[-4:]} without proxy.")
+                client = DiscordClient(token)
+                clients.append(client)
+                client_initialized = True
+            except ValueError as e:
+                logging.error(e)
+
+        if not client_initialized:
+            logging.error(f"Could not initialize a client for token ...{token[-4:]}")
+
 
     if not clients:
         logging.error("No valid clients could be initialized. Exiting.")
         exit()
+
+    logging.info(f"Successfully initialized {len(clients)} clients.")
 
     channel_ids = list(config['channel_intervals'].keys())
     num_clients = len(clients)
