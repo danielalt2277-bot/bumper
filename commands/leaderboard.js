@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { EmbedBuilder } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const fs = require('fs');
 
 module.exports = {
@@ -18,7 +18,7 @@ module.exports = {
             .sort(([, a], [, b]) => b - a)
             .slice(0, 10);
 
-        const embed = new EmbedBuilder()
+        const embed = new BrandedEmbedBuilder()
             .setTitle('Ticket Leaderboard')
             .setDescription(sortedUsers.map(([userId, count], index) => `${index + 1}. <@${userId}>: ${count} tickets`).join('\n') || 'No tickets claimed yet.');
 

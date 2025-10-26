@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { EmbedBuilder } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const { request } = require('undici');
 
 module.exports = {
@@ -15,7 +15,7 @@ module.exports = {
 
             const sortedPlayers = players.sort((a, b) => a.id - b.id).slice(0, 10);
 
-            const embed = new EmbedBuilder()
+            const embed = new BrandedEmbedBuilder()
                 .setTitle('Top 10 Players')
                 .setDescription(sortedPlayers.map((player, index) => `${index + 1}. ${player.name} (ID: ${player.id})`).join('\n') || 'No players online.');
 

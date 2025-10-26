@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { EmbedBuilder } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const { request } = require('undici');
 
 module.exports = {
@@ -16,7 +16,7 @@ module.exports = {
 
             const maxPlayers = serverInfo.vars.sv_maxClients;
 
-            const embed = new EmbedBuilder()
+            const embed = new BrandedEmbedBuilder()
                 .setTitle('FiveM Server Status')
                 .addFields(
                     { name: 'Status', value: 'Online', inline: true },
@@ -28,7 +28,7 @@ module.exports = {
             await interaction.reply({ embeds: [embed] });
         } catch (error) {
             console.error(error);
-            const embed = new EmbedBuilder()
+            const embed = new BrandedEmbedBuilder()
                 .setTitle('FiveM Server Status')
                 .addFields({ name: 'Status', value: 'Offline' })
                 .setColor('Red')

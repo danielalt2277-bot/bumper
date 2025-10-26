@@ -40,115 +40,128 @@ async function updatePanels() {
 
     // Update Ticket Leaderboard
     if (config.ticketLeaderboard) {
-        const channel = await client.channels.fetch(config.ticketLeaderboard.channelId);
-        const message = await channel.messages.fetch(config.ticketLeaderboard.messageId);
-
-        let ticketCounts;
         try {
-            ticketCounts = JSON.parse(fs.readFileSync('ticketCounts.json', 'utf8'));
-        } catch {
-            ticketCounts = {};
+            const channel = await client.channels.fetch(config.ticketLeaderboard.channelId);
+            const message = await channel.messages.fetch(config.ticketLeaderboard.messageId);
+
+            let ticketCounts;
+            try {
+                ticketCounts = JSON.parse(fs.readFileSync('ticketCounts.json', 'utf8'));
+            } catch {
+                ticketCounts = {};
+            }
+
+            const sortedUsers = Object.entries(ticketCounts)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 10);
+
+            const embed = new BrandedEmbedBuilder()
+                .setTitle('Ticket Leaderboard')
+                .setDescription(sortedUsers.map(([userId, count], index) => `${index + 1}. <@${userId}>: ${count} tickets`).join('\n') || 'No tickets claimed yet.')
+                .setTimestamp();
+
+            await message.edit({ embeds: [embed] });
+        } catch (error) {
+            console.error('Error updating ticket leaderboard:', error);
         }
-
-        const sortedUsers = Object.entries(ticketCounts)
-            .sort(([, a], [, b]) => b - a)
-            .slice(0, 10);
-
-        const embed = new EmbedBuilder()
-            .setTitle('Ticket Leaderboard')
-            .setDescription(sortedUsers.map(([userId, count], index) => `${index + 1}. <@${userId}>: ${count} tickets`).join('\n') || 'No tickets claimed yet.')
-            .setTimestamp();
-
-        await message.edit({ embeds: [embed] });
     }
 
     // Update Top Players Panel
     if (config.topPlayersPanel) {
-        const channel = await client.channels.fetch(config.topPlayersPanel.channelId);
-        const message = await channel.messages.fetch(config.topPlayersPanel.messageId);
-
         try {
-            const { body } = await request('http://141.226.242.24:30120/players.json');
-            const players = await body.json();
+            const channel = await client.channels.fetch(config.topPlayersPanel.channelId);
+            const message = await channel.messages.fetch(config.topPlayersPanel.messageId);
 
-            const sortedPlayers = players.sort((a, b) => a.id - b.id).slice(0, 10);
+            try {
+                const { body } = await request('http://141.226.242.24:30120/players.json');
+                const players = await body.json();
 
-            const embed = new EmbedBuilder()
-                .setTitle('Top 10 Players')
-                .setDescription(sortedPlayers.map((player, index) => `${index + 1}. ${player.name} (ID: ${player.id})`).join('\n') || 'No players online.')
-                .setTimestamp();
+                const sortedPlayers = players.sort((a, b) => a.id - b.id).slice(0, 10);
 
-            await message.edit({ embeds: [embed] });
-        } catch {
-            // Do nothing on error, maybe the server is offline
+                const embed = new BrandedEmbedBuilder()
+                    .setTitle('Top 10 Players')
+                    .setDescription(sortedPlayers.map((player, index) => `${index + 1}. ${player.name} (ID: ${player.id})`).join('\n') || 'No players online.')
+                    .setTimestamp();
+
+                await message.edit({ embeds: [embed] });
+            } catch {
+                const embed = new BrandedEmbedBuilder()
+                    .setTitle('Top 10 Players')
+                    .setDescription('Could not fetch player information.')
+                    .setColor('Red')
+                    .setTimestamp();
+                await message.edit({ embeds: [embed] });
+            }
+        } catch (error) {
+            console.error('Error updating top players panel:', error);
         }
     }
 
     // Update Server Status Panel
     if (config.serverStatusPanel) {
-        const channel = await client.channels.fetch(config.serverStatusPanel.channelId);
-        const message = await channel.messages.fetch(config.serverStatusPanel.messageId);
-
         try {
-            const { body: playerBody } = await request('http://141.226.242.24:30120/players.json');
-            const players = await playerBody.json();
+            const channel = await client.channels.fetch(config.serverStatusPanel.channelId);
+            const message = await channel.messages.fetch(config.serverStatusPanel.messageId);
 
-            const { body: infoBody } = await request('http://141.226.242.24:30120/info.json');
-            const serverInfo = await infoBody.json();
+            try {
+                const { body: playerBody } = await request('http://141.226.242.24:30120/players.json');
+                const players = await playerBody.json();
 
-            const maxPlayers = serverInfo.vars.sv_maxClients;
+                const { body: infoBody } = await request('http://141.226.242.24:30120/info.json');
+                const serverInfo = await infoBody.json();
 
-            const embed = new EmbedBuilder()
-                .setTitle('FiveM Server Status')
-                .addFields(
-                    { name: 'Status', value: 'Online', inline: true },
-                    { name: 'Players', value: `${players.length}/${maxPlayers}`, inline: true }
-                )
-                .setColor('Green')
-                .setTimestamp();
+                const maxPlayers = serverInfo.vars.sv_maxClients;
 
-            await message.edit({ embeds: [embed] });
-        } catch {
-            const embed = new EmbedBuilder()
-                .setTitle('FiveM Server Status')
-                .addFields({ name: 'Status', value: 'Offline' })
-                .setColor('Red')
-                .setTimestamp();
-            await message.edit({ embeds: [embed] });
+                const embed = new BrandedEmbedBuilder()
+                    .setTitle('FiveM Server Status')
+                    .addFields(
+                        { name: 'Status', value: 'Online', inline: true },
+                        { name: 'Players', value: `${players.length}/${maxPlayers}`, inline: true }
+                    )
+                    .setColor('Green')
+                    .setTimestamp();
+
+                await message.edit({ embeds: [embed] });
+            } catch {
+                const embed = new BrandedEmbedBuilder()
+                    .setTitle('FiveM Server Status')
+                    .addFields({ name: 'Status', value: 'Offline' })
+                    .setColor('Red')
+                    .setTimestamp();
+                await message.edit({ embeds: [embed] });
+            }
+        } catch (error) {
+            console.error('Error updating server status panel:', error);
         }
     }
 }
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
+const BrandedEmbedBuilder = require('./utils/embedBuilder');
 const { request } = require('undici');
 
 const hangmanGames = new Map();
 const userMessages = new Map();
-const verificationCodes = new Map();
 
-const staffRoleId = '11432039573764046858';
+async function log(guild, message, logType) {
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+    } catch {
+        return; // No config, no logging
+    }
 
-let logChannelId;
-
-try {
-    const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-    logChannelId = config.logChannelId;
-} catch {
-    console.log('config.json not found or is empty. Use /setlogchannel to set the log channel.');
-}
-
-const log = (guild, message) => {
+    const logChannelId = config.logChannels[logType];
     if (logChannelId) {
-        const logChannel = guild.channels.cache.get(logChannelId);
+        const logChannel = await guild.channels.fetch(logChannelId);
         if (logChannel) {
-            const embed = new EmbedBuilder()
+            const embed = new BrandedEmbedBuilder()
                 .setDescription(message)
                 .setTimestamp();
             logChannel.send({ embeds: [embed] });
         }
     }
-    console.log(message);
-};
+}
 
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
@@ -192,7 +205,13 @@ client.on('messageCreate', async message => {
 
     // Anti-link
     const linkRegex = /(https?:\/\/[^\s]+)/g;
-    if (linkRegex.test(message.content) && !message.member.roles.cache.has(staffRoleId)) {
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+    } catch {
+        // config not set up yet
+    }
+    if (config && config.staffRoleId && linkRegex.test(message.content) && !message.member.roles.cache.has(config.staffRoleId)) {
         message.delete();
         message.channel.send(`${message.author}, you are not allowed to send links.`);
     }
@@ -250,7 +269,7 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ content: 'Review channel not found.', ephemeral: true });
             }
 
-            const embed = new EmbedBuilder()
+            const embed = new BrandedEmbedBuilder()
                 .setTitle('New Application')
                 .addFields(
                     { name: 'Applicant', value: interaction.user.tag },
@@ -278,7 +297,7 @@ client.on('interactionCreate', async interaction => {
             const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
             const suggestionChannel = interaction.guild.channels.cache.get(config.suggestionChannelId);
             if (suggestionChannel) {
-                const embed = new EmbedBuilder()
+                const embed = new BrandedEmbedBuilder()
                     .setTitle('New Suggestion')
                     .setDescription(suggestion)
                     .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() });
@@ -291,7 +310,7 @@ client.on('interactionCreate', async interaction => {
             const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
             const bugReportChannel = interaction.guild.channels.cache.get(config.bugReportChannelId);
             if (bugReportChannel) {
-                const embed = new EmbedBuilder()
+                const embed = new BrandedEmbedBuilder()
                     .setTitle('New Bug Report')
                     .addFields(
                         { name: 'Description', value: description },
@@ -301,23 +320,73 @@ client.on('interactionCreate', async interaction => {
                 await bugReportChannel.send({ embeds: [embed] });
                 await interaction.reply({ content: 'Your bug report has been submitted.', ephemeral: true });
             }
-        } else if (interaction.customId.startsWith('verification_modal_')) {
-            const roleId = interaction.customId.split('_')[2];
-            const role = interaction.guild.roles.cache.get(roleId);
-            const userCode = interaction.fields.getTextInputValue('verification_code_input');
-            const correctCode = verificationCodes.get(interaction.user.id);
+        } else if (interaction.customId === 'staff_options_modal') {
+            const selectedOption = interaction.values[0];
 
-            if (userCode === correctCode) {
-                if (role) {
-                    await interaction.member.roles.add(role);
-                    await interaction.reply({ content: 'You have been successfully verified!', ephemeral: true });
-                } else {
-                    await interaction.reply({ content: 'Verification role not found. Please contact an admin.', ephemeral: true });
+            switch (selectedOption) {
+                case 'rename': {
+                    const modal = new ModalBuilder()
+                        .setCustomId('rename_ticket_modal')
+                        .setTitle('שינוי שם הטיקט')
+                        .addComponents(
+                            new ActionRowBuilder().addComponents(
+                                new TextInputBuilder()
+                                    .setCustomId('new_name_input')
+                                    .setLabel('שם חדש')
+                                    .setStyle(TextInputStyle.Short)
+                                    .setRequired(true)
+                            )
+                        );
+                    await interaction.showModal(modal);
+                    break;
                 }
-            } else {
-                await interaction.reply({ content: 'Incorrect code. Please try again.', ephemeral: true });
+                case 'add_user': {
+                    const modal = new ModalBuilder()
+                        .setCustomId('add_user_modal')
+                        .setTitle('הוספת משתמש לטיקט')
+                        .addComponents(
+                            new ActionRowBuilder().addComponents(
+                                new TextInputBuilder()
+                                    .setCustomId('user_id_input')
+                                    .setLabel('ID של המשתמש')
+                                    .setStyle(TextInputStyle.Short)
+                                    .setRequired(true)
+                            )
+                        );
+                    await interaction.showModal(modal);
+                    break;
+                }
+                case 'remove_user': {
+                    const modal = new ModalBuilder()
+                        .setCustomId('remove_user_modal')
+                        .setTitle('הסרת משתמש מהטיקט')
+                        .addComponents(
+                            new ActionRowBuilder().addComponents(
+                                new TextInputBuilder()
+                                    .setCustomId('user_id_input')
+                                    .setLabel('ID של המשתמש')
+                                    .setStyle(TextInputStyle.Short)
+                                    .setRequired(true)
+                            )
+                        );
+                    await interaction.showModal(modal);
+                    break;
+                }
             }
-            verificationCodes.delete(interaction.user.id);
+        } else if (interaction.customId === 'rename_ticket_modal') {
+            const newName = interaction.fields.getTextInputValue('new_name_input');
+            await interaction.channel.setName(newName);
+            await interaction.reply({ content: 'שם הטיקט שונה!', ephemeral: true });
+        } else if (interaction.customId === 'add_user_modal') {
+            const userId = interaction.fields.getTextInputValue('user_id_input');
+            const member = await interaction.guild.members.fetch(userId);
+            await interaction.channel.permissionOverwrites.edit(member.id, { ViewChannel: true });
+            await interaction.reply({ content: 'המשתמש הוסף לטיקט!', ephemeral: true });
+        } else if (interaction.customId === 'remove_user_modal') {
+            const userId = interaction.fields.getTextInputValue('user_id_input');
+            const member = await interaction.guild.members.fetch(userId);
+            await interaction.channel.permissionOverwrites.delete(member.id);
+            await interaction.reply({ content: 'המשתמש הוסר מהטיקט!', ephemeral: true });
         }
     } else if (interaction.isCommand()) {
         const command = client.commands.get(interaction.commandName);
@@ -326,7 +395,7 @@ client.on('interactionCreate', async interaction => {
 
         try {
             await command.execute(interaction);
-            log(interaction.guild, `${interaction.user.tag} used command /${interaction.commandName}`);
+            log(interaction.guild, `${interaction.user.tag} used command /${interaction.commandName}`, 'command');
         } catch (error) {
             console.error(error);
             await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
@@ -347,12 +416,13 @@ client.on('interactionCreate', async interaction => {
                 await targetMember.send('Your application has been denied.');
                 await interaction.reply({ content: `Application denied for ${targetMember.user.tag}.` });
             }
-        } else if (customId === 'create_ticket') {
+        } else if (interaction.isStringSelectMenu() && customId === 'select_ticket_category') {
+            const category = interaction.values[0];
             const guild = interaction.guild;
             const member = interaction.member;
 
             const channel = await guild.channels.create({
-                name: `ticket-${member.user.username}`,
+                name: `${category}-${member.user.username}`,
                 type: 0, // TEXT
                 permissionOverwrites: [
                     {
@@ -363,7 +433,7 @@ client.on('interactionCreate', async interaction => {
                         id: member.id,
                         allow: ['ViewChannel'],
                     },
-                    // Add staff roles here
+                    // Add staff roles here from config
                 ],
             });
 
@@ -371,29 +441,99 @@ client.on('interactionCreate', async interaction => {
                 .addComponents(
                     new ButtonBuilder()
                         .setCustomId('close_ticket')
-                        .setLabel('Close Ticket')
+                        .setLabel('Close')
                         .setStyle(ButtonStyle.Danger),
                     new ButtonBuilder()
                         .setCustomId('claim_ticket')
-                        .setLabel('Claim Ticket')
-                        .setStyle(ButtonStyle.Success)
+                        .setLabel('לקחת את הטיקט')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('staff_options')
+                        .setLabel('Staff Options')
+                        .setStyle(ButtonStyle.Secondary)
                 );
 
             await channel.send({
-                content: `Welcome ${member}! A staff member will be with you shortly.`,
+                content: `ברוך הבא ${member}! איש צוות יהיה איתך בקרוב.`,
                 components: [row]
             });
 
-            await interaction.reply({ content: `Ticket channel created: ${channel}`, ephemeral: true });
+            await interaction.reply({ content: `טיקט נוצר: ${channel}`, ephemeral: true });
 
         } else if (customId === 'close_ticket') {
             // Add check for staff role here
-            log(interaction.guild, `Ticket ${channel.name} closed by ${member.user.tag}.`);
+            log(interaction.guild, `Ticket ${channel.name} closed by ${member.user.tag}.`, 'ticket');
             await interaction.reply({ content: 'Closing this ticket in 5 seconds...' });
             setTimeout(() => channel.delete(), 5000);
+        } else if (customId === 'staff_options') {
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId('select_staff_option')
+                        .setPlaceholder('בחר אפשרות')
+                        .addOptions([
+                            { label: 'שנה שם לטיקט', value: 'rename' },
+                            { label: 'הוסף איש לטיקט', value: 'add_user' },
+                            { label: 'הסר איש מהטיקט', value: 'remove_user' },
+                        ])
+                );
+            await interaction.reply({ components: [row], ephemeral: true });
+        } else if (interaction.isStringSelectMenu() && customId === 'select_staff_option') {
+            const selectedOption = interaction.values[0];
+
+            switch (selectedOption) {
+                case 'rename': {
+                    const modal = new ModalBuilder()
+                        .setCustomId('rename_ticket_modal')
+                        .setTitle('שינוי שם הטיקט')
+                        .addComponents(
+                            new ActionRowBuilder().addComponents(
+                                new TextInputBuilder()
+                                    .setCustomId('new_name_input')
+                                    .setLabel('שם חדש')
+                                    .setStyle(TextInputStyle.Short)
+                                    .setRequired(true)
+                            )
+                        );
+                    await interaction.showModal(modal);
+                    break;
+                }
+                case 'add_user': {
+                    const modal = new ModalBuilder()
+                        .setCustomId('add_user_modal')
+                        .setTitle('הוספת משתמש לטיקט')
+                        .addComponents(
+                            new ActionRowBuilder().addComponents(
+                                new TextInputBuilder()
+                                    .setCustomId('user_id_input')
+                                    .setLabel('ID של המשתמש')
+                                    .setStyle(TextInputStyle.Short)
+                                    .setRequired(true)
+                            )
+                        );
+                    await interaction.showModal(modal);
+                    break;
+                }
+                case 'remove_user': {
+                    const modal = new ModalBuilder()
+                        .setCustomId('remove_user_modal')
+                        .setTitle('הסרת משתמש מהטיקט')
+                        .addComponents(
+                            new ActionRowBuilder().addComponents(
+                                new TextInputBuilder()
+                                    .setCustomId('user_id_input')
+                                    .setLabel('ID של המשתמש')
+                                    .setStyle(TextInputStyle.Short)
+                                    .setRequired(true)
+                            )
+                        );
+                    await interaction.showModal(modal);
+                    break;
+                }
+            }
         } else if (customId === 'claim_ticket') {
             // Add check for staff role here
-            log(interaction.guild, `Ticket ${channel.name} claimed by ${member.user.tag}.`);
+            log(interaction.guild, `Ticket ${channel.name} claimed by ${member.user.tag}.`, 'ticket');
             await channel.permissionOverwrites.edit(member.id, { ViewChannel: true });
             await interaction.reply({ content: `Ticket claimed by ${member.user.tag}.` });
 
@@ -436,25 +576,14 @@ client.on('interactionCreate', async interaction => {
             await interaction.message.edit({ components: [row] });
         } else if (customId.startsWith('verify_')) {
             const roleId = customId.split('_')[1];
-            const code = Math.floor(100000 + Math.random() * 900000).toString();
-            verificationCodes.set(interaction.user.id, code);
+            const role = interaction.guild.roles.cache.get(roleId);
 
-            const modal = new ModalBuilder()
-                .setCustomId(`verification_modal_${roleId}`)
-                .setTitle('Verification')
-                .addComponents(
-                    new ActionRowBuilder().addComponents(
-                        new TextInputBuilder()
-                            .setCustomId('verification_code_input')
-                            .setLabel(`Please enter the following code: ${code}`)
-                            .setStyle(TextInputStyle.Short)
-                            .setRequired(true)
-                            .setMinLength(6)
-                            .setMaxLength(6)
-                    )
-                );
-
-            await interaction.showModal(modal);
+            if (role) {
+                await member.roles.add(role);
+                await interaction.reply({ content: 'You have been verified!', ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'Verification role not found.', ephemeral: true });
+            }
         }
     }
 });

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { EmbedBuilder } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const { request } = require('undici');
 
 module.exports = {
@@ -23,7 +23,7 @@ module.exports = {
                 return member && member.roles.cache.has(role.id);
             });
 
-            const embed = new EmbedBuilder()
+            const embed = new BrandedEmbedBuilder()
                 .setTitle('Online Staff')
                 .setDescription(staffMembers.map(staff => staff.name).join('\n') || 'No staff members online.');
 

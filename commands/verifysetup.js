@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,9 +19,9 @@ module.exports = {
         const channel = interaction.options.getChannel('channel');
         const role = interaction.options.getRole('role');
 
-        const embed = new EmbedBuilder()
-            .setTitle('Verification')
-            .setDescription('Click the button below to verify yourself and gain access to the server.')
+        const embed = new BrandedEmbedBuilder()
+            .setTitle('אימות')
+            .setDescription('על מנת לקבל גישה לשרת, יש ללחוץ על הכפתור למטה.')
             .setColor('Green');
 
         const row = new ActionRowBuilder()

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const ms = require('ms');
 
 module.exports = {
@@ -23,7 +23,7 @@ module.exports = {
             return interaction.reply({ content: 'Invalid duration format.', ephemeral: true });
         }
 
-        const embed = new MessageEmbed()
+        const embed = new BrandedEmbedBuilder()
             .setTitle('🎉 Giveaway! 🎉')
             .setDescription(`React with 🎉 to enter!\n**Prize:** ${prize}`)
             .setFooter({ text: `Ends in ${duration}` })

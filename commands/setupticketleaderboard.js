@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { PermissionsBitField } = require('discord.js');
+const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const fs = require('fs');
 
 module.exports = {
@@ -14,7 +15,7 @@ module.exports = {
     async execute(interaction) {
         const channel = interaction.options.getChannel('channel');
 
-        const embed = new EmbedBuilder()
+        const embed = new BrandedEmbedBuilder()
             .setTitle('Ticket Leaderboard')
             .setDescription('Fetching data...');
 
