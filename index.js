@@ -185,6 +185,11 @@ async function log(guild, message, logType) {
     }
 }
 
+client.on('rateLimit', (rateLimitInfo) => {
+    console.log('Rate limit hit:', rateLimitInfo);
+    log(null, `Rate limit hit: ${JSON.stringify(rateLimitInfo)}`, 'command');
+});
+
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
@@ -273,6 +278,7 @@ client.on('messageCreate', async message => {
 });
 
 client.on('interactionCreate', async interaction => {
+    try {
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'application') {
             const name = interaction.fields.getTextInputValue('name');
@@ -439,6 +445,7 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: `Application denied for ${targetMember.user.tag}.` });
             }
         } else if (interaction.isStringSelectMenu() && customId === 'select_ticket_category') {
+            await interaction.deferReply({ ephemeral: true });
             const category = interaction.values[0];
             const guild = interaction.guild;
             const member = interaction.member;
@@ -480,7 +487,7 @@ client.on('interactionCreate', async interaction => {
                 components: [row]
             });
 
-            await interaction.reply({ content: `טיקט נוצר: ${channel}`, ephemeral: true });
+            await interaction.followUp({ content: `טיקט נוצר: ${channel}`, ephemeral: true });
 
         } else if (customId === 'close_ticket') {
             // Add check for staff role here
@@ -606,6 +613,15 @@ client.on('interactionCreate', async interaction => {
             } else {
                 await interaction.reply({ content: 'Verification role not found.', ephemeral: true });
             }
+        }
+    }
+    } catch (error) {
+        console.error(error);
+        log(interaction.guild, `An error occurred: ${error.message}`, 'command');
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ content: 'There was an error while executing this interaction!', ephemeral: true });
+        } else {
+            await interaction.reply({ content: 'There was an error while executing this interaction!', ephemeral: true });
         }
     }
 });
