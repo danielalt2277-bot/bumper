@@ -22,15 +22,109 @@ for (const file of commandFiles) {
     client.commands.set(command.data.name, command);
 }
 
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     client.user.setActivity('ULTIMATE RP', { type: 'PLAYING' });
+
+    setInterval(updatePanels, 5 * 60 * 1000); // Update every 5 minutes
+    updatePanels();
 });
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+async function updatePanels() {
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+    } catch {
+        return; // No config, no panels to update
+    }
+
+    // Update Ticket Leaderboard
+    if (config.ticketLeaderboard) {
+        const channel = await client.channels.fetch(config.ticketLeaderboard.channelId);
+        const message = await channel.messages.fetch(config.ticketLeaderboard.messageId);
+
+        let ticketCounts;
+        try {
+            ticketCounts = JSON.parse(fs.readFileSync('ticketCounts.json', 'utf8'));
+        } catch {
+            ticketCounts = {};
+        }
+
+        const sortedUsers = Object.entries(ticketCounts)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 10);
+
+        const embed = new EmbedBuilder()
+            .setTitle('Ticket Leaderboard')
+            .setDescription(sortedUsers.map(([userId, count], index) => `${index + 1}. <@${userId}>: ${count} tickets`).join('\n') || 'No tickets claimed yet.')
+            .setTimestamp();
+
+        await message.edit({ embeds: [embed] });
+    }
+
+    // Update Top Players Panel
+    if (config.topPlayersPanel) {
+        const channel = await client.channels.fetch(config.topPlayersPanel.channelId);
+        const message = await channel.messages.fetch(config.topPlayersPanel.messageId);
+
+        try {
+            const { body } = await request('http://141.226.242.24:30120/players.json');
+            const players = await body.json();
+
+            const sortedPlayers = players.sort((a, b) => a.id - b.id).slice(0, 10);
+
+            const embed = new EmbedBuilder()
+                .setTitle('Top 10 Players')
+                .setDescription(sortedPlayers.map((player, index) => `${index + 1}. ${player.name} (ID: ${player.id})`).join('\n') || 'No players online.')
+                .setTimestamp();
+
+            await message.edit({ embeds: [embed] });
+        } catch {
+            // Do nothing on error, maybe the server is offline
+        }
+    }
+
+    // Update Server Status Panel
+    if (config.serverStatusPanel) {
+        const channel = await client.channels.fetch(config.serverStatusPanel.channelId);
+        const message = await channel.messages.fetch(config.serverStatusPanel.messageId);
+
+        try {
+            const { body: playerBody } = await request('http://141.226.242.24:30120/players.json');
+            const players = await playerBody.json();
+
+            const { body: infoBody } = await request('http://141.226.242.24:30120/info.json');
+            const serverInfo = await infoBody.json();
+
+            const maxPlayers = serverInfo.vars.sv_maxClients;
+
+            const embed = new EmbedBuilder()
+                .setTitle('FiveM Server Status')
+                .addFields(
+                    { name: 'Status', value: 'Online', inline: true },
+                    { name: 'Players', value: `${players.length}/${maxPlayers}`, inline: true }
+                )
+                .setColor('Green')
+                .setTimestamp();
+
+            await message.edit({ embeds: [embed] });
+        } catch {
+            const embed = new EmbedBuilder()
+                .setTitle('FiveM Server Status')
+                .addFields({ name: 'Status', value: 'Offline' })
+                .setColor('Red')
+                .setTimestamp();
+            await message.edit({ embeds: [embed] });
+        }
+    }
+}
+
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { request } = require('undici');
 
 const hangmanGames = new Map();
 const userMessages = new Map();
+const verificationCodes = new Map();
 
 const staffRoleId = '11432039573764046858';
 
@@ -207,6 +301,23 @@ client.on('interactionCreate', async interaction => {
                 await bugReportChannel.send({ embeds: [embed] });
                 await interaction.reply({ content: 'Your bug report has been submitted.', ephemeral: true });
             }
+        } else if (interaction.customId.startsWith('verification_modal_')) {
+            const roleId = interaction.customId.split('_')[2];
+            const role = interaction.guild.roles.cache.get(roleId);
+            const userCode = interaction.fields.getTextInputValue('verification_code_input');
+            const correctCode = verificationCodes.get(interaction.user.id);
+
+            if (userCode === correctCode) {
+                if (role) {
+                    await interaction.member.roles.add(role);
+                    await interaction.reply({ content: 'You have been successfully verified!', ephemeral: true });
+                } else {
+                    await interaction.reply({ content: 'Verification role not found. Please contact an admin.', ephemeral: true });
+                }
+            } else {
+                await interaction.reply({ content: 'Incorrect code. Please try again.', ephemeral: true });
+            }
+            verificationCodes.delete(interaction.user.id);
         }
     } else if (interaction.isCommand()) {
         const command = client.commands.get(interaction.commandName);
@@ -236,9 +347,48 @@ client.on('interactionCreate', async interaction => {
                 await targetMember.send('Your application has been denied.');
                 await interaction.reply({ content: `Application denied for ${targetMember.user.tag}.` });
             }
+        } else if (customId === 'create_ticket') {
+            const guild = interaction.guild;
+            const member = interaction.member;
+
+            const channel = await guild.channels.create({
+                name: `ticket-${member.user.username}`,
+                type: 0, // TEXT
+                permissionOverwrites: [
+                    {
+                        id: guild.id,
+                        deny: ['ViewChannel'],
+                    },
+                    {
+                        id: member.id,
+                        allow: ['ViewChannel'],
+                    },
+                    // Add staff roles here
+                ],
+            });
+
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('close_ticket')
+                        .setLabel('Close Ticket')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('claim_ticket')
+                        .setLabel('Claim Ticket')
+                        .setStyle(ButtonStyle.Success)
+                );
+
+            await channel.send({
+                content: `Welcome ${member}! A staff member will be with you shortly.`,
+                components: [row]
+            });
+
+            await interaction.reply({ content: `Ticket channel created: ${channel}`, ephemeral: true });
+
         } else if (customId === 'close_ticket') {
             // Add check for staff role here
-            log(`Ticket ${channel.name} closed by ${member.user.tag}.`);
+            log(interaction.guild, `Ticket ${channel.name} closed by ${member.user.tag}.`);
             await interaction.reply({ content: 'Closing this ticket in 5 seconds...' });
             setTimeout(() => channel.delete(), 5000);
         } else if (customId === 'claim_ticket') {
@@ -286,14 +436,25 @@ client.on('interactionCreate', async interaction => {
             await interaction.message.edit({ components: [row] });
         } else if (customId.startsWith('verify_')) {
             const roleId = customId.split('_')[1];
-            const role = interaction.guild.roles.cache.get(roleId);
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            verificationCodes.set(interaction.user.id, code);
 
-            if (role) {
-                await member.roles.add(role);
-                await interaction.reply({ content: 'You have been verified!', ephemeral: true });
-            } else {
-                await interaction.reply({ content: 'Verification role not found.', ephemeral: true });
-            }
+            const modal = new ModalBuilder()
+                .setCustomId(`verification_modal_${roleId}`)
+                .setTitle('Verification')
+                .addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('verification_code_input')
+                            .setLabel(`Please enter the following code: ${code}`)
+                            .setStyle(TextInputStyle.Short)
+                            .setRequired(true)
+                            .setMinLength(6)
+                            .setMaxLength(6)
+                    )
+                );
+
+            await interaction.showModal(modal);
         }
     }
 });

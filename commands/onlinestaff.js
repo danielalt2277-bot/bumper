@@ -11,10 +11,11 @@ module.exports = {
                 .setDescription('The staff role to check for.')
                 .setRequired(true)),
     async execute(interaction) {
+        await interaction.deferReply();
         const role = interaction.options.getRole('role');
 
         try {
-            const { body } = await request('http://1.1.1.1:30120/players.json');
+            const { body } = await request('http://141.226.242.24:30120/players.json');
             const players = await body.json();
 
             const staffMembers = players.filter(player => {
