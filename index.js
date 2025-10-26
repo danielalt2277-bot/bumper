@@ -22,12 +22,24 @@ for (const file of commandFiles) {
     client.commands.set(command.data.name, command);
 }
 
+let serverOffline = false;
+let updateInterval = 5 * 60 * 1000; // Default to 5 minutes
+let smartInterval;
+
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     client.user.setActivity('ULTIMATE RP', { type: 'PLAYING' });
 
-    setInterval(updatePanels, 5 * 60 * 1000); // Update every 5 minutes
+    const startInterval = () => {
+        clearTimeout(smartInterval);
+        smartInterval = setTimeout(() => {
+            updatePanels();
+            startInterval();
+        }, updateInterval);
+    };
+
     updatePanels();
+    startInterval();
 });
 
 async function updatePanels() {
@@ -122,6 +134,7 @@ async function updatePanels() {
                     .setTimestamp();
 
                 await message.edit({ embeds: [embed] });
+                serverOffline = false;
             } catch {
                 const embed = new BrandedEmbedBuilder()
                     .setTitle('FiveM Server Status')
@@ -129,10 +142,17 @@ async function updatePanels() {
                     .setColor('Red')
                     .setTimestamp();
                 await message.edit({ embeds: [embed] });
+                serverOffline = true;
             }
         } catch (error) {
             console.error('Error updating server status panel:', error);
         }
+    }
+
+    if (serverOffline) {
+        updateInterval = 60 * 1000; // 1 minute
+    } else {
+        updateInterval = 5 * 60 * 1000; // 5 minutes
     }
 }
 
@@ -150,6 +170,8 @@ async function log(guild, message, logType) {
     } catch {
         return; // No config, no logging
     }
+
+    if (!config.logChannels) return;
 
     const logChannelId = config.logChannels[logType];
     if (logChannelId) {
@@ -209,7 +231,7 @@ client.on('messageCreate', async message => {
     try {
         config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
     } catch {
-        // config not set up yet
+        return;
     }
     if (config && config.staffRoleId && linkRegex.test(message.content) && !message.member.roles.cache.has(config.staffRoleId)) {
         message.delete();
