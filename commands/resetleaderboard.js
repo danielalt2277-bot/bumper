@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField } = require('discord.js');
+const { PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const fs = require('fs');
 
 module.exports = {
@@ -9,6 +9,6 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
     async execute(interaction) {
         fs.writeFileSync('ticketCounts.json', JSON.stringify({}));
-        await interaction.reply({ content: 'Ticket leaderboard has been reset.', ephemeral: true });
+        await interaction.reply({ content: 'Ticket leaderboard has been reset.', flags: InteractionResponseFlags.Ephemeral });
     },
 };

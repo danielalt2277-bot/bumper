@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { InteractionResponseFlags } = require('discord.js');
 const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const ms = require('ms');
 
@@ -20,7 +21,7 @@ module.exports = {
         const durationMs = ms(duration);
 
         if (!durationMs) {
-            return interaction.reply({ content: 'Invalid duration format.', ephemeral: true });
+            return interaction.reply({ content: 'Invalid duration format.', flags: InteractionResponseFlags.Ephemeral });
         }
 
         const embed = new BrandedEmbedBuilder()
@@ -44,6 +45,6 @@ module.exports = {
             }
         }, durationMs);
 
-        await interaction.reply({ content: 'Giveaway started!', ephemeral: true });
+        await interaction.reply({ content: 'Giveaway started!', flags: InteractionResponseFlags.Ephemeral });
     },
 };

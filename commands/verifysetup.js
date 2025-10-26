@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const BrandedEmbedBuilder = require('../utils/embedBuilder');
 
 module.exports = {
@@ -33,6 +33,6 @@ module.exports = {
             );
 
         await channel.send({ embeds: [embed], components: [row] });
-        await interaction.reply({ content: 'Verification message sent!', ephemeral: true });
+        await interaction.reply({ content: 'Verification message sent!', flags: InteractionResponseFlags.Ephemeral });
     },
 };

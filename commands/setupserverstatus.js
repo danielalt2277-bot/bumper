@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField } = require('discord.js');
+const { PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const fs = require('fs');
 
@@ -35,6 +35,6 @@ module.exports = {
 
         fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
 
-        await interaction.reply({ content: 'Server status panel setup complete!', ephemeral: true });
+        await interaction.reply({ content: 'Server status panel setup complete!', flags: InteractionResponseFlags.Ephemeral });
     },
 };

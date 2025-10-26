@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { ActionRowBuilder, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
+const { ActionRowBuilder, StringSelectMenuBuilder, PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const BrandedEmbedBuilder = require('../utils/embedBuilder');
 
 module.exports = {
@@ -37,6 +37,6 @@ module.exports = {
             );
 
         await channel.send({ embeds: [embed], components: [row] });
-        await interaction.reply({ content: 'Ticket setup message sent!', ephemeral: true });
+        await interaction.reply({ content: 'Ticket setup message sent!', flags: InteractionResponseFlags.Ephemeral });
     },
 };

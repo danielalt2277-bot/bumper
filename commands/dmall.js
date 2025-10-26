@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField } = require('discord.js');
+const { PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -21,10 +21,10 @@ module.exports = {
                 }
             });
 
-            await interaction.reply({ content: 'Message sent to all members.', ephemeral: true });
+            await interaction.reply({ content: 'Message sent to all members.', flags: InteractionResponseFlags.Ephemeral });
         } catch (error) {
             console.error(error);
-            await interaction.reply({ content: 'There was an error sending the message.', ephemeral: true });
+            await interaction.reply({ content: 'There was an error sending the message.', flags: InteractionResponseFlags.Ephemeral });
         }
     },
 };

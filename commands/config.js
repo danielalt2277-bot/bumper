@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField } = require('discord.js');
+const { PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const fs = require('fs');
 
 module.exports = {
@@ -25,6 +25,6 @@ module.exports = {
 
         fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
 
-        await interaction.reply({ content: 'Configuration saved!', ephemeral: true });
+        await interaction.reply({ content: 'Configuration saved!', flags: InteractionResponseFlags.Ephemeral });
     },
 };

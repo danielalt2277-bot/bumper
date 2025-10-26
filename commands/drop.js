@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, InteractionResponseFlags } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -25,6 +25,6 @@ module.exports = {
             components: [row]
         });
 
-        await interaction.reply({ content: 'Drop created!', ephemeral: true });
+        await interaction.reply({ content: 'Drop created!', flags: InteractionResponseFlags.Ephemeral });
     },
 };

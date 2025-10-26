@@ -26,7 +26,7 @@ let serverOffline = false;
 let updateInterval = 5 * 60 * 1000; // Default to 5 minutes
 let smartInterval;
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     client.user.setActivity('ULTIMATE RP', { type: 'PLAYING' });
 
@@ -156,7 +156,7 @@ async function updatePanels() {
     }
 }
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, InteractionResponseFlags } = require('discord.js');
 const BrandedEmbedBuilder = require('./utils/embedBuilder');
 const { request } = require('undici');
 
@@ -289,12 +289,12 @@ client.on('interactionCreate', async interaction => {
             try {
                 config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
             } catch {
-                return interaction.reply({ content: 'Review channel not set.', ephemeral: true });
+                return interaction.reply({ content: 'Review channel not set.', flags: InteractionResponseFlags.Ephemeral });
             }
 
             const reviewChannel = interaction.guild.channels.cache.get(config.reviewChannelId);
             if (!reviewChannel) {
-                return interaction.reply({ content: 'Review channel not found.', ephemeral: true });
+                return interaction.reply({ content: 'Review channel not found.', flags: InteractionResponseFlags.Ephemeral });
             }
 
             const embed = new BrandedEmbedBuilder()
@@ -319,7 +319,7 @@ client.on('interactionCreate', async interaction => {
                 );
 
             await reviewChannel.send({ embeds: [embed], components: [row] });
-            await interaction.reply({ content: 'Your application has been submitted.', ephemeral: true });
+            await interaction.reply({ content: 'Your application has been submitted.', flags: InteractionResponseFlags.Ephemeral });
         } else if (interaction.customId === 'suggestion') {
             const suggestion = interaction.fields.getTextInputValue('suggestion_input');
             const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
@@ -330,7 +330,7 @@ client.on('interactionCreate', async interaction => {
                     .setDescription(suggestion)
                     .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() });
                 await suggestionChannel.send({ embeds: [embed] });
-                await interaction.reply({ content: 'Your suggestion has been submitted.', ephemeral: true });
+                await interaction.reply({ content: 'Your suggestion has been submitted.', flags: InteractionResponseFlags.Ephemeral });
             }
         } else if (interaction.customId === 'bug_report') {
             const description = interaction.fields.getTextInputValue('bug_description');
@@ -346,7 +346,7 @@ client.on('interactionCreate', async interaction => {
                     )
                     .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() });
                 await bugReportChannel.send({ embeds: [embed] });
-                await interaction.reply({ content: 'Your bug report has been submitted.', ephemeral: true });
+                await interaction.reply({ content: 'Your bug report has been submitted.', flags: InteractionResponseFlags.Ephemeral });
             }
         } else if (interaction.customId === 'staff_options_modal') {
             const selectedOption = interaction.values[0];
@@ -404,17 +404,17 @@ client.on('interactionCreate', async interaction => {
         } else if (interaction.customId === 'rename_ticket_modal') {
             const newName = interaction.fields.getTextInputValue('new_name_input');
             await interaction.channel.setName(newName);
-            await interaction.reply({ content: 'שם הטיקט שונה!', ephemeral: true });
+            await interaction.reply({ content: 'שם הטיקט שונה!', flags: InteractionResponseFlags.Ephemeral });
         } else if (interaction.customId === 'add_user_modal') {
             const userId = interaction.fields.getTextInputValue('user_id_input');
             const member = await interaction.guild.members.fetch(userId);
             await interaction.channel.permissionOverwrites.edit(member.id, { ViewChannel: true });
-            await interaction.reply({ content: 'המשתמש הוסף לטיקט!', ephemeral: true });
+            await interaction.reply({ content: 'המשתמש הוסף לטיקט!', flags: InteractionResponseFlags.Ephemeral });
         } else if (interaction.customId === 'remove_user_modal') {
             const userId = interaction.fields.getTextInputValue('user_id_input');
             const member = await interaction.guild.members.fetch(userId);
             await interaction.channel.permissionOverwrites.delete(member.id);
-            await interaction.reply({ content: 'המשתמש הוסר מהטיקט!', ephemeral: true });
+            await interaction.reply({ content: 'המשתמש הוסר מהטיקט!', flags: InteractionResponseFlags.Ephemeral });
         }
     } else if (interaction.isCommand()) {
         const command = client.commands.get(interaction.commandName);
@@ -426,7 +426,7 @@ client.on('interactionCreate', async interaction => {
             log(interaction.guild, `${interaction.user.tag} used command /${interaction.commandName}`, 'command');
         } catch (error) {
             console.error(error);
-            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+            await interaction.reply({ content: 'There was an error while executing this command!', flags: InteractionResponseFlags.Ephemeral });
         }
     } else if (interaction.isButton()) {
         const { customId } = interaction;
@@ -445,7 +445,7 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: `Application denied for ${targetMember.user.tag}.` });
             }
         } else if (interaction.isStringSelectMenu() && customId === 'select_ticket_category') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: InteractionResponseFlags.Ephemeral });
             const category = interaction.values[0];
             const guild = interaction.guild;
             const member = interaction.member;
@@ -487,7 +487,7 @@ client.on('interactionCreate', async interaction => {
                 components: [row]
             });
 
-            await interaction.followUp({ content: `טיקט נוצר: ${channel}`, ephemeral: true });
+            await interaction.followUp({ content: `טיקט נוצר: ${channel}`, flags: InteractionResponseFlags.Ephemeral });
 
         } else if (customId === 'close_ticket') {
             // Add check for staff role here
@@ -506,7 +506,7 @@ client.on('interactionCreate', async interaction => {
                             { label: 'הסר איש מהטיקט', value: 'remove_user' },
                         ])
                 );
-            await interaction.reply({ components: [row], ephemeral: true });
+            await interaction.reply({ components: [row], flags: InteractionResponseFlags.Ephemeral });
         } else if (interaction.isStringSelectMenu() && customId === 'select_staff_option') {
             const selectedOption = interaction.values[0];
 
@@ -609,9 +609,9 @@ client.on('interactionCreate', async interaction => {
 
             if (role) {
                 await member.roles.add(role);
-                await interaction.reply({ content: 'You have been verified!', ephemeral: true });
+                await interaction.reply({ content: 'You have been verified!', flags: InteractionResponseFlags.Ephemeral });
             } else {
-                await interaction.reply({ content: 'Verification role not found.', ephemeral: true });
+                await interaction.reply({ content: 'Verification role not found.', flags: InteractionResponseFlags.Ephemeral });
             }
         }
     }
@@ -619,9 +619,9 @@ client.on('interactionCreate', async interaction => {
         console.error(error);
         log(interaction.guild, `An error occurred: ${error.message}`, 'command');
         if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error while executing this interaction!', ephemeral: true });
+            await interaction.followUp({ content: 'There was an error while executing this interaction!', flags: InteractionResponseFlags.Ephemeral });
         } else {
-            await interaction.reply({ content: 'There was an error while executing this interaction!', ephemeral: true });
+            await interaction.reply({ content: 'There was an error while executing this interaction!', flags: InteractionResponseFlags.Ephemeral });
         }
     }
 });

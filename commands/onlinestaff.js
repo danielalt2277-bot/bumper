@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { InteractionResponseFlags } = require('discord.js');
 const BrandedEmbedBuilder = require('../utils/embedBuilder');
 const { request } = require('undici');
 
@@ -30,7 +31,7 @@ module.exports = {
             await interaction.reply({ embeds: [embed] });
         } catch (error) {
             console.error(error);
-            await interaction.reply({ content: 'Could not fetch player information.', ephemeral: true });
+            await interaction.reply({ content: 'Could not fetch player information.', flags: InteractionResponseFlags.Ephemeral });
         }
     },
 };

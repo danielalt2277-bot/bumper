@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField } = require('discord.js');
+const { PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const fs = require('fs');
 
 module.exports = {
@@ -18,6 +18,6 @@ module.exports = {
         const config = { logChannelId: channel.id };
         fs.writeFileSync('config.json', JSON.stringify(config));
 
-        await interaction.reply({ content: `Log channel set to ${channel}.`, ephemeral: true });
+        await interaction.reply({ content: `Log channel set to ${channel}.`, flags: InteractionResponseFlags.Ephemeral });
     },
 };

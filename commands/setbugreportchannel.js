@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionsBitField } = require('discord.js');
+const { PermissionsBitField, InteractionResponseFlags } = require('discord.js');
 const fs = require('fs');
 
 module.exports = {
@@ -24,6 +24,6 @@ module.exports = {
         config.bugReportChannelId = channel.id;
         fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
 
-        await interaction.reply({ content: `Bug report channel set to ${channel}.`, ephemeral: true });
+        await interaction.reply({ content: `Bug report channel set to ${channel}.`, flags: InteractionResponseFlags.Ephemeral });
     },
 };
