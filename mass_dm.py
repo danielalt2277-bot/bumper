@@ -27,35 +27,38 @@ class Config:
 class DiscordAPI:
     def __init__(self, token: str):
         self.token = token
-        self.headers = {"Authorization": token}
+        # Reverted to Bot token authentication - this is the correct and working method.
+        self.headers = {"Authorization": f"Bot {self.token}"}
 
     async def get_guild_members(self, guild_id: str) -> List[User]:
-        all_members = {}  # Use a dict to store unique members by ID
-        search_chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-
-        logging.info("Starting comprehensive member scrape...")
+        # Reverted to the standard, paginated member fetching method for bots.
+        # This is the correct method and will work with a bot that has the Server Members Intent enabled.
+        all_members = []
+        last_user_id = None
+        url = f"https://discord.com/api/v9/guilds/{guild_id}/members?limit=1000"
 
         async with aiohttp.ClientSession(headers=self.headers) as session:
-            for char in search_chars:
-                url = f"https://discord.com/api/v9/guilds/{guild_id}/members/search?query={char}"
+            while True:
+                paginated_url = f"{url}&after={last_user_id}" if last_user_id else url
                 try:
-                    await asyncio.sleep(random.uniform(0.5, 1.5)) # Small delay
-                    async with session.get(url) as response:
+                    async with session.get(paginated_url) as response:
                         if response.status == 200:
                             members_data = await response.json()
-                            for member in members_data:
-                                user_id = member['user']['id']
-                                if user_id not in all_members:
-                                    all_members[user_id] = User(id=user_id, username=member['user']['username'])
-                            logging.info(f"Found {len(members_data)} members for query '{char}'. Total unique members: {len(all_members)}")
-                        else:
-                            logging.warning(f"Could not fetch members for query '{char}'. Status: {response.status}")
-                            # Don't stop, just continue to the next character
-                except aiohttp.ClientError as e:
-                    logging.error(f"An error occurred while searching for members with query '{char}': {e}")
+                            if not members_data:
+                                break  # No more members
 
-        logging.info("Comprehensive member scrape finished.")
-        return list(all_members.values())
+                            all_members.extend([User(id=member['user']['id'], username=member['user']['username']) for member in members_data])
+                            last_user_id = members_data[-1]['user']['id']
+
+                            if len(members_data) < 1000:
+                                break # Last page
+                        else:
+                            logging.error(f"Failed to get guild members. Status: {response.status}, Response: {await response.text()}")
+                            break
+                except aiohttp.ClientError as e:
+                    logging.error(f"An error occurred while getting guild members: {e}")
+                    break
+        return all_members
 
     async def send_dm(self, user_id: str, message: str) -> bool:
         url = "https://discord.com/api/v9/users/@me/channels"
