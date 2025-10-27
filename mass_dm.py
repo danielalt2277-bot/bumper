@@ -27,7 +27,7 @@ class Config:
 class DiscordAPI:
     def __init__(self, token: str):
         self.token = token
-        self.headers = {"Authorization": f"Bot {self.token}"}
+        self.headers = {"Authorization": token}
 
     async def get_guild_members(self, guild_id: str) -> List[User]:
         all_members = []
