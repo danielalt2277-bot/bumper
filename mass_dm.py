@@ -30,32 +30,20 @@ class DiscordAPI:
         self.headers = {"Authorization": token}
 
     async def get_guild_members(self, guild_id: str) -> List[User]:
-        all_members = []
-        last_user_id = None
-        url = f"https://discord.com/api/v9/guilds/{guild_id}/members?limit=1000"
-
+        # This alternate method uses the search endpoint. It can sometimes bypass server privacy settings.
+        url = f"https://discord.com/api/v9/guilds/{guild_id}/members/search?query="
         async with aiohttp.ClientSession(headers=self.headers) as session:
-            while True:
-                paginated_url = f"{url}&after={last_user_id}" if last_user_id else url
-                try:
-                    async with session.get(paginated_url) as response:
-                        if response.status == 200:
-                            members_data = await response.json()
-                            if not members_data:
-                                break  # No more members
-
-                            all_members.extend([User(id=member['user']['id'], username=member['user']['username']) for member in members_data])
-                            last_user_id = members_data[-1]['user']['id']
-
-                            if len(members_data) < 1000:
-                                break # Last page
-                        else:
-                            logging.error(f"Failed to get guild members. Status: {response.status}, Response: {await response.text()}")
-                            break
-                except aiohttp.ClientError as e:
-                    logging.error(f"An error occurred while getting guild members: {e}")
-                    break
-        return all_members
+            try:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        members_data = await response.json()
+                        return [User(id=member['user']['id'], username=member['user']['username']) for member in members_data]
+                    else:
+                        logging.error(f"Failed to get guild members. Status: {response.status}, Response: {await response.text()}")
+                        return []
+            except aiohttp.ClientError as e:
+                logging.error(f"An error occurred while getting guild members: {e}")
+                return []
 
     async def send_dm(self, user_id: str, message: str) -> bool:
         url = "https://discord.com/api/v9/users/@me/channels"
