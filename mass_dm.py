@@ -112,7 +112,7 @@ def get_user_choice():
 
 def load_config() -> Optional[Config]:
     try:
-        with open("config.json", "r") as f:
+        with open("config.json", "r", encoding="utf-8") as f:
             config_data = json.load(f)
             return Config(
                 token=config_data.get("token"),
