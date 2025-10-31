@@ -144,6 +144,10 @@ const commands = [
             },
         ],
     },
+    {
+        name: 'spawner',
+        description: 'Displays the StarOS Spawner menu.',
+    },
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
@@ -412,11 +416,39 @@ client.on('interactionCreate', async interaction => {
             }
 
             await interaction.followUp({ content: `Finished. ${joinedCount} tokens were used to join the server.`, ephemeral: true });
+        } else if (commandName === 'spawner') {
+            const embed = new EmbedBuilder()
+                .setTitle('StarOS Spawner')
+                .setDescription('Click the button below to spawn a brainrot.')
+                .setColor('#00FFFF');
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('spawn_brainrot')
+                    .setLabel('Spawn')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
     } else if (interaction.isButton()) {
             const [action, ...args] = interaction.customId.split('_');
 
-            if (action === 'manage' && args[0] === 'autobump') {
+            if (action === 'spawn' && args[0] === 'brainrot') {
+                const modal = new ModalBuilder()
+                    .setCustomId('brainrot_modal')
+                    .setTitle('StarOS Spawner')
+                    .addComponents(
+                        new ActionRowBuilder().addComponents(
+                            new TextInputBuilder()
+                                .setCustomId('brainrot_name')
+                                .setLabel('Enter Brainrot Name')
+                                .setStyle(TextInputStyle.Short)
+                                .setRequired(true)
+                        )
+                    );
+                await interaction.showModal(modal);
+            } else if (action === 'manage' && args[0] === 'autobump') {
                 const operation = args[1];
             const user = db.data.users.find(u => u.id === interaction.user.id);
             const autoBumpService = user.services.autoBump;
@@ -511,7 +543,10 @@ client.on('interactionCreate', async interaction => {
         } else if (interaction.isModalSubmit()) {
             const [action, ...args] = interaction.customId.split('_');
 
-            if (action === 'edit' && args[0] === 'key' && args[1] === 'modal') {
+            if (interaction.customId === 'brainrot_modal') {
+                const brainrotName = interaction.fields.getTextInputValue('brainrot_name');
+                await interaction.reply({ content: `Spawning brainrot: ${brainrotName}`, ephemeral: true });
+            } else if (action === 'edit' && args[0] === 'key' && args[1] === 'modal') {
                 const keyToEdit = args[2];
                 const newDurationString = interaction.fields.getTextInputValue('new_duration');
                 const newDuration = newDurationString === '0' ? Infinity : ms(newDurationString);
